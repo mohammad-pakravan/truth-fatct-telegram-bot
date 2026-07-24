@@ -1,0 +1,11 @@
+﻿.venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+data/bot.db
+data/*.db-journal
+.idea/
+.vscode/
+*.egg-info/

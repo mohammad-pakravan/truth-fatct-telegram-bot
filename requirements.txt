@@ -1,0 +1,6 @@
+﻿python-telegram-bot==21.10
+SQLAlchemy==2.0.36
+python-dotenv==1.0.1
+psycopg2-binary==2.9.10
+boto3==1.35.76
+Pillow==11.1.0

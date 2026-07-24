@@ -1,0 +1,196 @@
+﻿from __future__ import annotations
+
+import logging
+
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
+
+from bot.config import require_token
+from bot.db import get_session, init_db
+from bot.handlers import (
+    advanced,
+    channel,
+    fake,
+    friends,
+    gameplay,
+    group,
+    history,
+    menu,
+    profile,
+    start,
+    stranger,
+    wizard,
+)
+from bot.services import fake_identity as fake_svc
+from bot.services import storage
+from bot.texts import fa as T
+from bot import state as st
+
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+# Browse / settings OK without full profile; game & chat need it
+_OPEN_WITHOUT_PROFILE = {
+    T.BTN_HELP,
+    T.BTN_CONTACT,
+    T.BTN_HUB_PROFILE,
+    T.BTN_PROFILE,
+    T.BTN_HISTORY,
+    T.BTN_SHOW_PROFILE,
+    T.BTN_RUN_WIZARD,
+    T.BTN_COMPLETE_PROFILE,
+    T.BTN_GAME_SETTINGS,
+}
+
+
+async def on_menu_buttons(update, context):
+    if not update.message or not update.message.text or not update.effective_user:
+        return
+    text = update.message.text.strip()
+
+    # Wizard has priority
+    if await wizard.wizard_text(update, context):
+        return
+
+    mapping = {
+        T.BTN_ADVANCED: advanced.open_advanced,
+        T.BTN_NEARBY: stranger.open_nearby,
+        T.BTN_ANON: stranger.open_anonymous,
+        T.BTN_HUB_PROFILE: menu.open_hub_profile,
+        T.BTN_HUB_FRIENDS: menu.open_hub_friends,
+        T.BTN_HELP: menu.open_help,
+        T.BTN_CONTACT: menu.open_contact,
+        T.BTN_FRIENDS: friends.open_friends,
+        T.BTN_GROUP_CHANNEL: group.open_group_channel,
+        T.BTN_STRANGER: stranger.open_stranger,
+        T.BTN_PROFILE: profile.open_profile,
+        T.BTN_HISTORY: history.open_history,
+        T.BTN_FAKE: fake.open_fake,
+        T.BTN_COMPLETE_PROFILE: lambda u, c: wizard.start_wizard(u, c, force=True),
+        T.BTN_RUN_WIZARD: lambda u, c: wizard.start_wizard(u, c, force=True),
+    }
+
+    # Only gate game/chat entry points
+    if text in mapping and text not in _OPEN_WITHOUT_PROFILE:
+        if await wizard.maybe_require_wizard(update, context, feature=text):
+            return
+
+    handler = mapping.get(text)
+    if handler:
+        await handler(update, context)
+        return
+
+    if text == T.BTN_BACK:
+        mode = st.get(update.effective_user.id).get("mode")
+        if mode == "profile":
+            await profile.profile_text(update, context)
+            return
+        if mode in ("hub_profile", "hub_friends"):
+            if await menu.hub_profile_text(update, context):
+                return
+            if await menu.hub_friends_text(update, context):
+                return
+        await start.menu_router(update, context)
+        return
+
+    if await menu.hub_profile_text(update, context):
+        return
+    if await menu.hub_friends_text(update, context):
+        return
+
+    await profile.profile_text(update, context)
+    await friends.friends_text(update, context)
+    await channel.channel_text(update, context)
+    await gameplay.answer_text(update, context)
+
+
+async def on_photo(update, context):
+    if await wizard.wizard_photo(update, context):
+        return
+
+
+async def match_pref_callbacks(update, context):
+    if not update.effective_user:
+        return
+    if st.get(update.effective_user.id).get("mode") == "fake_match":
+        await fake.fake_callbacks(update, context)
+    else:
+        await stranger.stranger_callbacks(update, context)
+
+
+async def post_init(app: Application) -> None:
+    init_db()
+    try:
+        storage.ensure_bucket()
+    except Exception:
+        logger.exception("MinIO bucket check failed (bot still runs; photo upload may fail)")
+    with get_session() as session:
+        n = fake_svc.seed_from_json(session)
+        if n:
+            logger.info("Seeded %s fake identities", n)
+
+
+def build_app(token: str | None = None) -> Application:
+    app = (
+        Application.builder()
+        .token(token or require_token())
+        .post_init(post_init)
+        .build()
+    )
+
+    app.add_handler(CommandHandler("start", start.start))
+    app.add_handler(CommandHandler("group_game", group.group_game_cmd))
+    app.add_handler(CommandHandler("channel_game", channel.channel_game_cmd))
+    app.add_handler(CommandHandler("cancel_match", stranger.cancel_match_cmd))
+
+    app.add_handler(CallbackQueryHandler(friends.friends_callbacks, pattern=r"^inv_disp:"))
+    app.add_handler(
+        CallbackQueryHandler(
+            profile.profile_callbacks,
+            pattern=r"^(pgender:|pprov:|set:|profile_card:|pedit:)",
+        )
+    )
+    app.add_handler(CallbackQueryHandler(wizard.wizard_callbacks, pattern=r"^(wiz_prov:|wiz_gender:)"))
+    app.add_handler(CallbackQueryHandler(group.gc_help_callback, pattern=r"^gc:"))
+    app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:)"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_truth_dare, pattern=r"^td:"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_skip, pattern=r"^skip:"))
+    app.add_handler(
+        CallbackQueryHandler(
+            match_pref_callbacks,
+            pattern=r"^(str_city:|pref_gender:|age_from:|age_to:|str_id:|str_cancel$)",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            advanced.advanced_callbacks,
+            pattern=r"^(adv_partner:|adv_prov|adv_age:|adv_seen:|adv_sort:|adv_page:|adv_play:|adv_research$|adv_queue$)",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(fake.fake_callbacks, pattern=r"^(fake_gender:|fake_go:|fguess:)")
+    )
+    app.add_handler(CallbackQueryHandler(channel.channel_callbacks, pattern=r"^(ch_mode:|ch_vote:|ch_opt:)"))
+
+    app.add_handler(MessageHandler(filters.PHOTO, on_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_menu_buttons))
+
+    return app
+
+
+def main() -> None:
+    app = build_app()
+    logger.info("Bot starting…")
+    app.run_polling(allowed_updates=["message", "callback_query", "channel_post"])
+
+
+if __name__ == "__main__":
+    main()
