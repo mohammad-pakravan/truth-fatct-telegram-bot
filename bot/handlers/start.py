@@ -65,7 +65,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
             await update.message.reply_text(
                 f"{T.INVITE_ACCEPTED}\nدعوت از: {label}",
-                reply_markup=main_menu(),
+                reply_markup=kb.in_game_menu(is_chooser=rnd.chooser_user_id == user.id),
             )
             text = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
             markup = kb.truth_dare(game.id, rnd.chooser_user_id)
@@ -74,6 +74,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await context.bot.send_message(
                         chooser_u.telegram_id, text, reply_markup=markup
                     )
+                    from bot.handlers import gameplay
+
+                    await gameplay.send_in_game_menu(
+                        context, chooser_u.telegram_id, is_chooser=True
+                    )
                 except Exception:
                     pass
             if target_u and target_u.telegram_id != tg.id:
@@ -81,6 +86,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await context.bot.send_message(
                         target_u.telegram_id,
                         f"بازی با {label} شروع شد. منتظر انتخاب جرئت/حقیقت باش.",
+                        reply_markup=kb.in_game_menu(is_chooser=False),
                     )
                 except Exception:
                     pass

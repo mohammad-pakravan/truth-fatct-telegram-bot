@@ -8,11 +8,23 @@ from bot import state as st
 from bot.config import AGE_FROM_OPTIONS, AGE_TO_OPTIONS
 from bot.db import get_session
 from bot.keyboards import main_menu
-from bot.models import User
 from bot.services import game_engine
+from bot.services import match_flow
 from bot.services import matchmaker
 from bot.services import users as user_svc
 from bot.texts import fa as T
+
+
+async def _guard_active_game(update: Update, context: ContextTypes.DEFAULT_TYPE, session, user) -> bool:
+    """If already in a game, restore in-game keyboard and return True."""
+    if not game_engine.active_session_for_user(session, user):
+        return False
+    from bot.handlers import gameplay
+
+    await gameplay.resume_active_game_keyboard(
+        context, update.effective_user.id, reply_to=update.message
+    )
+    return True
 
 
 async def open_stranger(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -24,12 +36,14 @@ async def open_stranger(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if not user_svc.profile_complete(user):
             await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
             return
+        if await _guard_active_game(update, context, session, user):
+            return
     st.set_state(tg.id, mode="stranger", wait="city", stranger={})
     await update.message.reply_text(T.STRANGER_INTRO, reply_markup=kb.city_pref())
 
 
 async def open_nearby(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Same-city matchmaking shortcut."""
+    """Nearby matchmaking via Telegram live location + radius."""
     if not update.message or not update.effective_user:
         return
     tg = update.effective_user
@@ -38,16 +52,89 @@ async def open_nearby(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not user_svc.profile_complete(user):
             await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
             return
-    s = {"same_city": True}
-    st.set_state(tg.id, mode="stranger", wait="gender", stranger=s)
+        if await _guard_active_game(update, context, session, user):
+            return
+    st.set_state(tg.id, mode="nearby", wait="location", stranger={})
     await update.message.reply_text(
-        "📍 افراد نزدیک (همشهری)\nجنسیت طرف مقابل رو انتخاب کن:",
-        reply_markup=kb.gender_any_inline("pref_gender"),
+        T.NEARBY_ASK_LOCATION,
+        reply_markup=kb.request_location_menu(),
+    )
+
+
+async def nearby_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Handle shared Telegram location for nearby flow. Returns True if handled."""
+    if not update.message or not update.effective_user or not update.message.location:
+        return False
+    tg = update.effective_user
+    state = st.get(tg.id)
+    if state.get("mode") != "nearby" or state.get("wait") != "location":
+        return False
+
+    loc = update.message.location
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+        from datetime import datetime
+
+        user.latitude = loc.latitude
+        user.longitude = loc.longitude
+        user.location_updated_at = datetime.utcnow()
+
+    st.set_state(tg.id, mode="nearby", wait="radius")
+    await update.message.reply_text(
+        T.NEARBY_ASK_RADIUS,
+        reply_markup=kb.radius_keyboard(),
+    )
+    await update.message.reply_text(
+        "شعاع رو از دکمه‌های بالا انتخاب کن 👆",
+        reply_markup=main_menu(),
+    )
+    return True
+
+
+async def nearby_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query or not query.data or not update.effective_user:
+        return
+    if not query.data.startswith("near_r:"):
+        return
+    await query.answer()
+    tg = update.effective_user
+    state = st.get(tg.id)
+    if state.get("mode") != "nearby":
+        await query.edit_message_text("اول از منو «افراد نزدیک» رو بزن و لوکیشن بفرست.")
+        return
+
+    km = int(query.data.split(":")[1])
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+        if user.latitude is None or user.longitude is None:
+            await query.edit_message_text(T.NEARBY_ASK_LOCATION)
+            await context.bot.send_message(
+                tg.id, T.NEARBY_ASK_LOCATION, reply_markup=kb.request_location_menu()
+            )
+            st.set_state(tg.id, mode="nearby", wait="location")
+            return
+
+    await query.edit_message_text(T.NEARBY_SEARCHING.format(km=km))
+    await match_flow.enqueue_and_maybe_match(
+        context,
+        telegram_user=tg,
+        prefs={
+            "same_city": False,
+            "gender": "any",
+            "age_from": None,
+            "age_to": None,
+            "require_identity": True,
+            "play_anonymous": False,
+            "radius_km": km,
+        },
+        queue_mode="nearby",
+        edit_message=query.message,
     )
 
 
 async def open_anonymous(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Stranger match with identity hidden preference pre-selected."""
+    """Instant anonymous match — no gender/age/city filters."""
     if not update.message or not update.effective_user:
         return
     tg = update.effective_user
@@ -56,12 +143,41 @@ async def open_anonymous(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if not user_svc.profile_complete(user):
             await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
             return
-    s = {"require_identity": False, "play_anonymous": True}
-    st.set_state(tg.id, mode="stranger", wait="city", stranger=s)
-    await update.message.reply_text(
-        "🕶 بازی با ناشناس\nهمشهری می‌خوای یا هرجا اوکیه؟",
-        reply_markup=kb.city_pref(),
+        if await _guard_active_game(update, context, session, user):
+            return
+
+    await update.message.reply_text(T.ANON_SEARCHING)
+    await match_flow.enqueue_and_maybe_match(
+        context,
+        telegram_user=tg,
+        prefs={
+            "same_city": False,
+            "gender": "any",
+            "age_from": None,
+            "age_to": None,
+            "require_identity": False,
+            "play_anonymous": True,
+        },
+        queue_mode="anonymous",
     )
+
+
+async def leave_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Handle leave-queue reply button. Returns True if handled."""
+    if not update.message or not update.effective_user:
+        return False
+    text = (update.message.text or "").strip()
+    tg = update.effective_user
+
+    if text == T.BTN_CANCEL and st.get(tg.id).get("mode") == "nearby":
+        st.clear(tg.id)
+        await update.message.reply_text(T.LEFT_QUEUE, reply_markup=main_menu())
+        return True
+
+    if text != T.BTN_LEAVE_QUEUE:
+        return False
+    await cancel_match_cmd(update, context)
+    return True
 
 
 async def stranger_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -76,9 +192,13 @@ async def stranger_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data == "str_cancel":
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username)
-            matchmaker.cancel(session, user)
+            ok = matchmaker.cancel(session, user)
         st.clear(tg.id)
-        await query.edit_message_text("از صف خارج شدی.")
+        await query.edit_message_text(T.LEFT_QUEUE if ok else T.NOT_IN_QUEUE)
+        try:
+            await context.bot.send_message(tg.id, T.MAIN_MENU_TITLE, reply_markup=main_menu())
+        except Exception:
+            pass
         return
 
     if data.startswith("str_city:"):
@@ -108,9 +228,9 @@ async def stranger_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data.startswith("age_to:"):
         s["age_to"] = int(data.split(":")[1])
-        # If anonymous shortcut already chose identity prefs, skip that step
         if "require_identity" in s:
-            await _enqueue_and_match(query, context, tg, s, use_fake=False)
+            mode = "anonymous" if s.get("play_anonymous") else ("nearby" if s.get("same_city") else "stranger")
+            await _enqueue_and_match(query, context, tg, s, use_fake=False, queue_mode=mode)
             return
         st.set_state(tg.id, stranger=s, wait="identity")
         await query.edit_message_text("هویت طرف مشخص باشه؟", reply_markup=kb.identity_pref())
@@ -119,65 +239,30 @@ async def stranger_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data.startswith("str_id:"):
         s["require_identity"] = data.endswith(":visible")
         s["play_anonymous"] = not s["require_identity"]
-        await _enqueue_and_match(query, context, tg, s, use_fake=False)
+        mode = "anonymous" if s["play_anonymous"] else ("nearby" if s.get("same_city") else "stranger")
+        await _enqueue_and_match(query, context, tg, s, use_fake=False, queue_mode=mode)
 
 
-async def _enqueue_and_match(query, context, tg, s, use_fake=False, identity_mode="real", fake_id=None):
-    with get_session() as session:
-        user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
-        matchmaker.enqueue(
-            session,
-            user,
-            same_city_only=bool(s.get("same_city")),
-            preferred_gender=s.get("gender") if s.get("gender") != "any" else "any",
-            age_from=s.get("age_from"),
-            age_to=s.get("age_to"),
-            require_identity=bool(s.get("require_identity", True)),
-            play_anonymous=bool(s.get("play_anonymous", False)),
-            use_fake_identity=use_fake,
-            fake_identity_id=fake_id,
-            identity_mode=identity_mode,
-        )
-        result = matchmaker.try_match(session, user)
-        if not result:
-            st.clear(tg.id)
-            await query.edit_message_text(T.WAITING_MATCH, reply_markup=kb.cancel_match())
-            return
-
-        game, other = result
-        rnd = game_engine.get_active_round(session, game)
-        players = game_engine.get_players(session, game)
-        chooser_name = target_name = "?"
-        for p in players:
-            if rnd and p.user_id == rnd.chooser_user_id:
-                chooser_name = game_engine.display_for_player(p)
-            if rnd and p.user_id == rnd.target_user_id:
-                target_name = game_engine.display_for_player(p)
-        text = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
-        markup = kb.truth_dare(game.id, rnd.chooser_user_id) if rnd else None
-
-        # notify both
-        me_msg = T.MATCH_FOUND + "\n" + _opponent_blurb(session, user, other)
-        other_msg = T.MATCH_FOUND + "\n" + _opponent_blurb(session, other, user)
-        st.clear(tg.id)
-        await query.edit_message_text(me_msg)
-        try:
-            await context.bot.send_message(other.telegram_id, other_msg)
-        except Exception:
-            pass
-        if rnd and markup:
-            chooser = session.get(User, rnd.chooser_user_id)
-            if chooser:
-                try:
-                    await context.bot.send_message(
-                        chooser.telegram_id, text, reply_markup=markup
-                    )
-                except Exception:
-                    pass
-
-
-def _opponent_blurb(session, me: User, other: User) -> str:
-    return "حریف:\n" + user_svc.format_profile(other, viewer_settings=me)
+async def _enqueue_and_match(
+    query,
+    context,
+    tg,
+    s,
+    use_fake=False,
+    identity_mode="real",
+    fake_id=None,
+    queue_mode="stranger",
+):
+    await match_flow.enqueue_and_maybe_match(
+        context,
+        telegram_user=tg,
+        prefs=s,
+        use_fake=use_fake,
+        identity_mode=identity_mode,
+        fake_id=fake_id,
+        queue_mode=queue_mode,
+        edit_message=query.message,
+    )
 
 
 async def cancel_match_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -186,7 +271,8 @@ async def cancel_match_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     with get_session() as session:
         user = user_svc.get_or_create_user(session, update.effective_user.id)
         ok = matchmaker.cancel(session, user)
+    st.clear(update.effective_user.id)
     await update.message.reply_text(
-        "از صف خارج شدی." if ok else "تو صف نبودی.",
+        T.LEFT_QUEUE if ok else T.NOT_IN_QUEUE,
         reply_markup=main_menu(),
     )

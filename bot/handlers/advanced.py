@@ -10,7 +10,6 @@ from bot.keyboards import main_menu
 from bot.models import User
 from bot.provinces import PROVINCES
 from bot.services import game_engine
-from bot.services import matchmaker
 from bot.services import search as search_svc
 from bot.services import users as user_svc
 from bot.texts import fa as T
@@ -32,6 +31,13 @@ async def open_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         if not user_svc.profile_complete(user):
             await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
+            return
+        if game_engine.active_session_for_user(session, user):
+            from bot.handlers import gameplay
+
+            await gameplay.resume_active_game_keyboard(
+                context, tg.id, reply_to=update.message
+            )
             return
     st.set_state(tg.id, mode="advanced", wait="partner_gender", adv={})
     await update.message.reply_text(
@@ -265,46 +271,29 @@ async def _enqueue_from_prefs(query, context, tg, prefs) -> None:
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         provinces = prefs.get("provinces") or []
-        same_city = bool(user.province and provinces == [user.province])
-        matchmaker.enqueue(
-            session,
-            user,
-            same_city_only=same_city,
-            preferred_gender=prefs.get("gender"),
-            age_from=prefs.get("age_from"),
-            age_to=prefs.get("age_to"),
-            require_identity=True,
-            play_anonymous=False,
-        )
-        result = matchmaker.try_match(session, user)
-        if not result:
-            st.clear(tg.id)
-            await query.edit_message_text(T.WAITING_MATCH, reply_markup=kb.cancel_match())
-            return
-        game, other = result
-        rnd = game_engine.get_active_round(session, game)
-        st.clear(tg.id)
-        await query.edit_message_text(
-            T.MATCH_FOUND + "\n" + user_svc.format_profile(other, viewer_settings=user)
-        )
-        if rnd:
-            text = T.CHOOSE_TRUTH_OR_DARE.format(
-                chooser=user_svc.public_name(session.get(User, rnd.chooser_user_id)),
-                target=user_svc.public_name(session.get(User, rnd.target_user_id)),
-            )
-            markup = kb.truth_dare(game.id, rnd.chooser_user_id)
-            chooser = session.get(User, rnd.chooser_user_id)
-            if chooser:
-                try:
-                    await context.bot.send_message(
-                        chooser.telegram_id, text, reply_markup=markup
-                    )
-                except Exception:
-                    pass
-            try:
-                await context.bot.send_message(other.telegram_id, T.MATCH_FOUND)
-            except Exception:
-                pass
+        same_city = bool(user.city and prefs.get("same_city"))
+        if not same_city and user.province and provinces == [user.province]:
+            # single-province search for own province ≈ nearby-ish, but keep city soft
+            same_city = False
+
+    queue_prefs = {
+        "same_city": same_city,
+        "gender": prefs.get("gender") or "any",
+        "age_from": prefs.get("age_from"),
+        "age_to": prefs.get("age_to"),
+        "require_identity": True,
+        "play_anonymous": False,
+        "provinces": provinces,
+    }
+    from bot.services import match_flow
+
+    await match_flow.enqueue_and_maybe_match(
+        context,
+        telegram_user=tg,
+        prefs=queue_prefs,
+        queue_mode="advanced",
+        edit_message=query.message,
+    )
 
 
 async def _start_game_with(query, context, tg, target_user_id: int) -> None:
@@ -322,6 +311,10 @@ async def _start_game_with(query, context, tg, target_user_id: int) -> None:
         await query.edit_message_text(
             f"🎮 بازی با {user_svc.public_name(other)} شروع شد!"
         )
+        await query.message.reply_text(
+            T.BTN_GAME_MENU_HINT,
+            reply_markup=kb.in_game_menu(is_chooser=rnd.chooser_user_id == me.id),
+        )
         text = T.CHOOSE_TRUTH_OR_DARE.format(
             chooser=user_svc.public_name(me),
             target=user_svc.public_name(other),
@@ -329,12 +322,16 @@ async def _start_game_with(query, context, tg, target_user_id: int) -> None:
         markup = kb.truth_dare(game.id, rnd.chooser_user_id)
         try:
             await context.bot.send_message(me.telegram_id, text, reply_markup=markup)
+            from bot.handlers import gameplay
+
+            await gameplay.send_in_game_menu(context, me.telegram_id, is_chooser=True)
         except Exception:
             pass
         try:
             await context.bot.send_message(
                 other.telegram_id,
                 f"🎮 {user_svc.public_name(me)} تو رو به جرئت حقیقت دعوت کرد!",
+                reply_markup=kb.in_game_menu(is_chooser=False),
             )
             await context.bot.send_message(
                 other.telegram_id,

@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -33,6 +34,9 @@ class User(Base):
     profile_photo_file_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     profile_photo_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    location_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Privacy / game settings
     allow_stranger_requests: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -154,10 +158,18 @@ class MatchQueue(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    # waiting | matched | cancelled | expired
+    status: Mapped[str] = mapped_column(String(16), default="waiting", index=True)
+    # stranger | anonymous | nearby | advanced | fake
+    queue_mode: Mapped[str] = mapped_column(String(16), default="stranger", index=True)
     same_city_only: Mapped[bool] = mapped_column(Boolean, default=False)
     preferred_gender: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # male/female/any
     age_from: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     age_to: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # max distance for nearby matching (km); None = not used
+    radius_km: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # JSON list of province names for advanced search; empty = any
+    provinces_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     require_identity: Mapped[bool] = mapped_column(Boolean, default=True)
     play_anonymous: Mapped[bool] = mapped_column(Boolean, default=False)
     # for fake-identity mode queue
@@ -166,7 +178,14 @@ class MatchQueue(Base):
         ForeignKey("fake_identities.id"), nullable=True
     )
     identity_mode: Mapped[str] = mapped_column(String(8), default="real")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    matched_game_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("game_sessions.id"), nullable=True
+    )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class FakeIdentity(Base):

@@ -66,8 +66,8 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     waiting = st.get(tg.id).get("waiting")
     if waiting == "name":
-        if len(text) < 2:
-            await update.message.reply_text("اسم حداقل ۲ حرف باشه 🙂")
+        if not text:
+            await update.message.reply_text("فقط یه اسم یا لقب بفرست 😊")
             return
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)

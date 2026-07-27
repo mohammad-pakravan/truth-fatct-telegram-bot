@@ -121,6 +121,7 @@ async def fake_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 use_fake=True,
                 identity_mode=st.get(tg.id).get("identity_mode", "fake"),
                 fake_id=st.get(tg.id).get("fake_identity_id"),
+                queue_mode="fake",
             )
             return
 

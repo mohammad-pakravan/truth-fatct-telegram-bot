@@ -120,8 +120,8 @@ async def wizard_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
         return True
 
     if step == "name":
-        if len(text) < 2:
-            await update.message.reply_text("یه اسم قشنگ‌تر بفرست، حداقل ۲ حرف 😄")
+        if not text:
+            await update.message.reply_text("فقط یه اسم یا لقب بفرست 😊")
             return True
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)

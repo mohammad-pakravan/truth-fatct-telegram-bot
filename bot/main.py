@@ -2,6 +2,7 @@
 
 import logging
 
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -9,8 +10,18 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
-from bot.config import require_token
+from bot.config import (
+    MATCH_JOB_INTERVAL_SECONDS,
+    TELEGRAM_CONNECT_TIMEOUT,
+    TELEGRAM_POOL_TIMEOUT,
+    TELEGRAM_PROXY,
+    TELEGRAM_READ_TIMEOUT,
+    TELEGRAM_WRITE_TIMEOUT,
+    require_token,
+)
+from bot.jobs.matcher import match_queue_job
 from bot.db import get_session, init_db
 from bot.handlers import (
     advanced,
@@ -60,6 +71,9 @@ async def on_menu_buttons(update, context):
     if await wizard.wizard_text(update, context):
         return
 
+    if await stranger.leave_queue(update, context):
+        return
+
     mapping = {
         T.BTN_ADVANCED: advanced.open_advanced,
         T.BTN_NEARBY: stranger.open_nearby,
@@ -70,7 +84,6 @@ async def on_menu_buttons(update, context):
         T.BTN_CONTACT: menu.open_contact,
         T.BTN_FRIENDS: friends.open_friends,
         T.BTN_GROUP_CHANNEL: group.open_group_channel,
-        T.BTN_STRANGER: stranger.open_stranger,
         T.BTN_PROFILE: profile.open_profile,
         T.BTN_HISTORY: history.open_history,
         T.BTN_FAKE: fake.open_fake,
@@ -101,6 +114,9 @@ async def on_menu_buttons(update, context):
         await start.menu_router(update, context)
         return
 
+    if await gameplay.game_menu_text(update, context):
+        return
+
     if await menu.hub_profile_text(update, context):
         return
     if await menu.hub_friends_text(update, context):
@@ -117,6 +133,11 @@ async def on_photo(update, context):
         return
 
 
+async def on_location(update, context):
+    if await stranger.nearby_location(update, context):
+        return
+
+
 async def match_pref_callbacks(update, context):
     if not update.effective_user:
         return
@@ -124,6 +145,14 @@ async def match_pref_callbacks(update, context):
         await fake.fake_callbacks(update, context)
     else:
         await stranger.stranger_callbacks(update, context)
+
+
+async def on_error(update, context) -> None:
+    err = context.error
+    if isinstance(err, (TimedOut, NetworkError)):
+        logger.warning("Telegram network issue: %s", err)
+        return
+    logger.exception("Unhandled error while processing update: %s", update)
 
 
 async def post_init(app: Application) -> None:
@@ -136,15 +165,44 @@ async def post_init(app: Application) -> None:
         n = fake_svc.seed_from_json(session)
         if n:
             logger.info("Seeded %s fake identities", n)
+    if app.job_queue:
+        app.job_queue.run_repeating(
+            match_queue_job,
+            interval=MATCH_JOB_INTERVAL_SECONDS,
+            first=2,
+            name="match_queue",
+            job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
+        )
+        logger.info(
+            "Match queue worker started (every %ss)", MATCH_JOB_INTERVAL_SECONDS
+        )
+    else:
+        logger.warning(
+            "JobQueue unavailable — install python-telegram-bot[job-queue] for background matching"
+        )
 
 
 def build_app(token: str | None = None) -> Application:
+    request_kwargs = {
+        "connect_timeout": TELEGRAM_CONNECT_TIMEOUT,
+        "read_timeout": TELEGRAM_READ_TIMEOUT,
+        "write_timeout": TELEGRAM_WRITE_TIMEOUT,
+        "pool_timeout": TELEGRAM_POOL_TIMEOUT,
+    }
+    if TELEGRAM_PROXY:
+        request_kwargs["proxy"] = TELEGRAM_PROXY
+        logger.info("Using TELEGRAM_PROXY")
+
+    request = HTTPXRequest(**request_kwargs)
     app = (
         Application.builder()
         .token(token or require_token())
+        .request(request)
+        .get_updates_request(HTTPXRequest(**request_kwargs))
         .post_init(post_init)
         .build()
     )
+    app.add_error_handler(on_error)
 
     app.add_handler(CommandHandler("start", start.start))
     app.add_handler(CommandHandler("group_game", group.group_game_cmd))
@@ -163,6 +221,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:)"))
     app.add_handler(CallbackQueryHandler(gameplay.on_truth_dare, pattern=r"^td:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_skip, pattern=r"^skip:"))
+    app.add_handler(CallbackQueryHandler(stranger.nearby_callbacks, pattern=r"^near_r:"))
     app.add_handler(
         CallbackQueryHandler(
             match_pref_callbacks,
@@ -181,6 +240,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CallbackQueryHandler(channel.channel_callbacks, pattern=r"^(ch_mode:|ch_vote:|ch_opt:)"))
 
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
+    app.add_handler(MessageHandler(filters.LOCATION, on_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_menu_buttons))
 
     return app

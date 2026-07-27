@@ -16,6 +16,22 @@ def main_menu() -> ReplyKeyboardMarkup:
     )
 
 
+def in_game_menu(is_chooser: bool = False) -> ReplyKeyboardMarkup:
+    first_row = [KeyboardButton(T.BTN_GAME_PROFILE), KeyboardButton(T.BTN_GAME_END)]
+    second_row = (
+        [KeyboardButton(T.BTN_DARE), KeyboardButton(T.BTN_TRUTH)]
+        if is_chooser
+        else [KeyboardButton(T.BTN_GAME_WAIT)]
+    )
+    return ReplyKeyboardMarkup(
+        [
+            first_row,
+            second_row,
+        ],
+        resize_keyboard=True,
+    )
+
+
 def back_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup([[KeyboardButton(T.BTN_BACK)]], resize_keyboard=True)
 
@@ -309,6 +325,33 @@ def city_pref() -> InlineKeyboardMarkup:
     )
 
 
+def request_location_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(T.BTN_SHARE_LOCATION, request_location=True)],
+            [KeyboardButton(T.BTN_CANCEL)],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def radius_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("۱ کیلومتر", callback_data="near_r:1"),
+                InlineKeyboardButton("۱۰ کیلومتر", callback_data="near_r:10"),
+            ],
+            [
+                InlineKeyboardButton("۲۵ کیلومتر", callback_data="near_r:25"),
+                InlineKeyboardButton("۵۰ کیلومتر", callback_data="near_r:50"),
+            ],
+            [InlineKeyboardButton("۱۰۰ کیلومتر", callback_data="near_r:100")],
+        ]
+    )
+
+
 def identity_pref() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -386,7 +429,14 @@ def channel_option_votes(session_id: int, round_id: int, options: list[str]) -> 
 
 def cancel_match() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(T.LEAVE_QUEUE, callback_data="str_cancel")]]
+        [[InlineKeyboardButton(T.BTN_LEAVE_QUEUE, callback_data="str_cancel")]]
+    )
+
+
+def queue_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton(T.BTN_LEAVE_QUEUE)]],
+        resize_keyboard=True,
     )
 
 

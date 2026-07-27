@@ -207,6 +207,21 @@ def get_session(session: Session, session_id: int) -> Optional[GameSession]:
     return session.get(GameSession, session_id)
 
 
+def active_session_for_user(session: Session, user: User) -> Optional[GameSession]:
+    row = (
+        session.query(GameSession)
+        .join(GamePlayer, GamePlayer.session_id == GameSession.id)
+        .filter(
+            GamePlayer.user_id == user.id,
+            GameSession.status.in_(["playing", "guessing"]),
+            GameSession.game_type.in_(["friends", "stranger", "anonymous", "nearby", "fake_identity"]),
+        )
+        .order_by(GameSession.id.desc())
+        .first()
+    )
+    return row
+
+
 def user_recent_games(session: Session, user: User, limit: int = 20) -> list[GameSession]:
     player_rows = (
         session.query(GamePlayer.session_id)
