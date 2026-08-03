@@ -89,6 +89,8 @@ class GameSession(Base):
     # channel answer mode: buttons | comments
     channel_answer_mode: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     channel_options_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # discussion-group message id that audience should reply to (comments mode)
+    channel_prompt_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -104,11 +106,13 @@ class GamePlayer(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    # real | fake
-    identity_mode: Mapped[str] = mapped_column(String(8), default="real")
+    # real | fake | anonymous | nickname
+    identity_mode: Mapped[str] = mapped_column(String(16), default="real")
     fake_identity_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("fake_identities.id"), nullable=True
     )
+    # custom display for invite nickname / override label
+    display_label: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # guess at end: fake | real | None
     final_guess: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     guess_correct: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
@@ -146,8 +150,8 @@ class Vote(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), index=True)
     voter_telegram_id: Mapped[int] = mapped_column(BigInteger)
-    # truth | dare | or option index as string
-    value: Mapped[str] = mapped_column(String(64))
+    # option index "0"/"1"/… or free-text comment
+    value: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     round: Mapped["Round"] = relationship(back_populates="votes")
@@ -202,3 +206,67 @@ class FakeIdentity(Base):
     dislikes: Mapped[str] = mapped_column(Text)
     used_count: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # hash of core fields for per-user dedupe
+    fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserFakeAssignment(Base):
+    """Tracks which generated fakes a user has seen until reveal."""
+
+    __tablename__ = "user_fake_assignments"
+    __table_args__ = (
+        UniqueConstraint("user_id", "fingerprint", name="uq_user_fake_fp"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    fake_identity_id: Mapped[int] = mapped_column(ForeignKey("fake_identities.id"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    revealed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped["User"] = relationship()
+    fake_identity: Mapped["FakeIdentity"] = relationship()
+
+
+class BotAdmin(Base):
+    """Extra bot admins (beyond ADMIN_IDS in .env)."""
+
+    __tablename__ = "bot_admins"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SponsoredChannel(Base):
+    """Channels/groups users must join for a specific province (bot should be admin)."""
+
+    __tablename__ = "sponsored_channels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    # Province name from PROVINCES list — required for gating
+    province: Mapped[str] = mapped_column(String(64), default="", index=True)
+    title: Mapped[str] = mapped_column(String(128), default="")
+    invite_link: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AnalyticsEvent(Base):
+    """Lightweight event log for admin reports (sponsor clicks, checks, …)."""
+
+    __tablename__ = "analytics_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    channel_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    province: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

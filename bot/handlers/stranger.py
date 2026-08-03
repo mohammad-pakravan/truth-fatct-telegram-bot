@@ -38,8 +38,14 @@ async def open_stranger(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
         if await _guard_active_game(update, context, session, user):
             return
+        city = user.city or "—"
+
     st.set_state(tg.id, mode="stranger", wait="city", stranger={})
-    await update.message.reply_text(T.STRANGER_INTRO, reply_markup=kb.city_pref())
+    await update.message.reply_text(T.STRANGER_INTRO)
+    await update.message.reply_text(
+        T.STRANGER_ASK_CITY.format(city=city),
+        reply_markup=kb.city_pref(),
+    )
 
 
 async def open_nearby(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -204,14 +210,17 @@ async def stranger_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data.startswith("str_city:"):
         s["same_city"] = data.endswith(":same")
         st.set_state(tg.id, stranger=s, wait="gender")
-        await query.edit_message_text("جنسیت طرف مقابل؟", reply_markup=kb.gender_any_inline("pref_gender"))
+        await query.edit_message_text(
+            T.STRANGER_ASK_GENDER,
+            reply_markup=kb.gender_any_inline("pref_gender"),
+        )
         return
 
     if data.startswith("pref_gender:"):
         s["gender"] = data.split(":")[1]
         st.set_state(tg.id, stranger=s, wait="age_from")
         await query.edit_message_text(
-            "رنج سنی — از چند سال؟",
+            T.STRANGER_ASK_AGE_FROM,
             reply_markup=kb.age_options("age_from", AGE_FROM_OPTIONS),
         )
         return
@@ -221,26 +230,46 @@ async def stranger_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         st.set_state(tg.id, stranger=s, wait="age_to")
         opts = [a for a in AGE_TO_OPTIONS if a >= s["age_from"]]
         await query.edit_message_text(
-            "رنج سنی — تا چند سال؟",
+            T.STRANGER_ASK_AGE_TO.format(from_age=s["age_from"]),
             reply_markup=kb.age_options("age_to", opts),
         )
         return
 
     if data.startswith("age_to:"):
         s["age_to"] = int(data.split(":")[1])
-        if "require_identity" in s:
-            mode = "anonymous" if s.get("play_anonymous") else ("nearby" if s.get("same_city") else "stranger")
-            await _enqueue_and_match(query, context, tg, s, use_fake=False, queue_mode=mode)
+        # Fake-identity path may pre-set require_identity and skip remaining prompts
+        if "require_identity" in s and st.get(tg.id).get("mode") == "fake_match":
+            await _enqueue_and_match(
+                query, context, tg, s, use_fake=True, queue_mode="fake"
+            )
             return
         st.set_state(tg.id, stranger=s, wait="identity")
-        await query.edit_message_text("هویت طرف مشخص باشه؟", reply_markup=kb.identity_pref())
+        await query.edit_message_text(
+            T.STRANGER_ASK_IDENTITY,
+            reply_markup=kb.identity_pref(),
+        )
         return
 
     if data.startswith("str_id:"):
-        s["require_identity"] = data.endswith(":visible")
-        s["play_anonymous"] = not s["require_identity"]
-        mode = "anonymous" if s["play_anonymous"] else ("nearby" if s.get("same_city") else "stranger")
-        await _enqueue_and_match(query, context, tg, s, use_fake=False, queue_mode=mode)
+        visible = data.endswith(":visible")
+        s["require_identity"] = visible
+        s["play_anonymous"] = not visible
+        with get_session() as session:
+            user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+            user.show_identity = visible
+        st.set_state(tg.id, stranger=s, wait="allow_anon")
+        await query.edit_message_text(
+            T.STRANGER_ASK_ALLOW_ANON,
+            reply_markup=kb.allow_anon_pref(),
+        )
+        return
+
+    if data.startswith("str_allow:"):
+        allow = data.endswith(":yes")
+        with get_session() as session:
+            user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+            user.allow_anonymous_requests = allow
+        await _enqueue_and_match(query, context, tg, s, use_fake=False, queue_mode="stranger")
 
 
 async def _enqueue_and_match(

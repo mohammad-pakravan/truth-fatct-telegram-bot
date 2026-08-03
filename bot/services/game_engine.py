@@ -35,6 +35,7 @@ def add_player(
     user: User,
     identity_mode: str = "real",
     fake_identity_id: Optional[int] = None,
+    display_label: Optional[str] = None,
 ) -> GamePlayer:
     existing = (
         session.query(GamePlayer)
@@ -48,6 +49,7 @@ def add_player(
         user_id=user.id,
         identity_mode=identity_mode,
         fake_identity_id=fake_identity_id,
+        display_label=display_label,
     )
     session.add(player)
     session.flush()
@@ -72,7 +74,21 @@ def display_for_player(player: GamePlayer) -> str:
     if player.identity_mode == "fake" and player.fake_identity:
         fi = player.fake_identity
         return f"{fi.name} ({fi.city})"
+    if player.identity_mode in ("anonymous", "nickname"):
+        return public_name(player.user, player.identity_mode, player.display_label)
     return public_name(player.user)
+
+
+def presented_profile(player: GamePlayer) -> str:
+    """What the opponent should see for this player (persona or real profile)."""
+    from bot.services import fake_identity as fake_svc
+    from bot.services import users as user_svc
+
+    if player.identity_mode == "fake" and player.fake_identity:
+        return fake_svc.format_card_public(player.fake_identity)
+    if player.identity_mode == "anonymous":
+        return "کاربر ناشناس"
+    return user_svc.format_profile(player.user, viewer_settings=player.user)
 
 
 def start_two_player(session: Session, game: GameSession) -> Round:
@@ -181,17 +197,60 @@ def finish_game(session: Session, game: GameSession) -> None:
     skipped = sum(1 for r in rounds if r.status == "skipped")
     players = get_players(session, game)
     names = "، ".join(display_for_player(p) for p in players)
+    kind = _game_type_label(game.game_type)
     game.summary = (
-        f"نوع: {game.game_type} | بازیکنان: {names} | "
+        f"{kind} با {names} — "
         f"{len(rounds)} راند ({answered} جواب، {skipped} رد)"
     )
-    # for fake identity games, move to guessing instead of finished if needed
-    if game.game_type == "fake_identity" and any(p.identity_mode == "fake" for p in players):
-        # keep finished but mark guessing phase via status if guesses pending
-        pending = [p for p in players if p.final_guess is None]
-        if pending:
-            game.status = "guessing"
+    # Fake-identity games always end with the core guess question
+    if game.game_type == "fake_identity":
+        game.status = "guessing"
     return None
+
+
+def _game_type_label(game_type: str) -> str:
+    return {
+        "friends": "دوستان",
+        "group": "گروه",
+        "channel": "کانال",
+        "stranger": "غریبه",
+        "anonymous": "ناشناس",
+        "nearby": "نزدیک",
+        "fake_identity": "هویت رندوم",
+    }.get(game_type, game_type)
+
+
+def format_history_entry(session: Session, game: GameSession, me_user_id: int) -> str:
+    """Short history line: whom + kind + progress."""
+    players = get_players(session, game)
+    others = [display_for_player(p) for p in players if p.user_id != me_user_id]
+    if not others and game.game_type == "channel":
+        whom = "مخاطبان کانال"
+    elif not others and game.game_type == "group":
+        whom = "، ".join(display_for_player(p) for p in players) or "گروه"
+    else:
+        whom = "، ".join(others) if others else "—"
+
+    kind = _game_type_label(game.game_type)
+    rounds = (
+        session.query(Round)
+        .filter_by(session_id=game.id)
+        .order_by(Round.round_no)
+        .all()
+    )
+    if rounds:
+        answered = sum(1 for r in rounds if r.status == "answered")
+        skipped = sum(1 for r in rounds if r.status == "skipped")
+        progress = f"{len(rounds)} راند · {answered} جواب · {skipped} رد"
+    elif game.summary:
+        # fallback extract after em-dash if present
+        progress = game.summary
+        if "— " in game.summary:
+            progress = game.summary.split("— ", 1)[-1]
+    else:
+        progress = f"وضعیت: {game.status}"
+
+    return f"با {whom}\n   {kind} — {progress}"
 
 
 def get_active_round(session: Session, game: GameSession) -> Optional[Round]:

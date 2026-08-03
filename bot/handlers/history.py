@@ -25,8 +25,17 @@ async def open_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if not games:
             await update.message.reply_text(T.HISTORY_EMPTY, reply_markup=main_menu())
             return
-        lines = [T.HISTORY_HEADER, ""]
+
+        lines = [T.HISTORY_HEADER.format(n=len(games)), ""]
         for i, g in enumerate(games, 1):
-            summary = g.summary or f"نوع {g.game_type} — وضعیت {g.status}"
-            lines.append(f"{i}. {summary}")
-        await update.message.reply_text("\n".join(lines), reply_markup=main_menu())
+            entry = game_engine.format_history_entry(session, g, user.id)
+            lines.append(f"{i}. {entry}")
+            if i < len(games):
+                lines.append("")
+
+        text = "\n".join(lines)
+        # Telegram message limit safety
+        if len(text) > 4000:
+            text = text[:3990] + "\n…"
+
+        await update.message.reply_text(text, reply_markup=main_menu())

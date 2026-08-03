@@ -24,6 +24,7 @@ from bot.config import (
 from bot.jobs.matcher import match_queue_job
 from bot.db import get_session, init_db
 from bot.handlers import (
+    admin,
     advanced,
     channel,
     fake,
@@ -31,6 +32,7 @@ from bot.handlers import (
     gameplay,
     group,
     history,
+    membership,
     menu,
     profile,
     start,
@@ -71,10 +73,14 @@ async def on_menu_buttons(update, context):
     if await wizard.wizard_text(update, context):
         return
 
+    if await admin.admin_text(update, context):
+        return
+
     if await stranger.leave_queue(update, context):
         return
 
     mapping = {
+        T.BTN_STRANGER: stranger.open_stranger,
         T.BTN_ADVANCED: advanced.open_advanced,
         T.BTN_NEARBY: stranger.open_nearby,
         T.BTN_ANON: stranger.open_anonymous,
@@ -125,6 +131,7 @@ async def on_menu_buttons(update, context):
     await profile.profile_text(update, context)
     await friends.friends_text(update, context)
     await channel.channel_text(update, context)
+    await channel.discussion_comment(update, context)
     await gameplay.answer_text(update, context)
 
 
@@ -205,6 +212,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_error_handler(on_error)
 
     app.add_handler(CommandHandler("start", start.start))
+    app.add_handler(CommandHandler("admin", admin.open_admin))
     app.add_handler(CommandHandler("group_game", group.group_game_cmd))
     app.add_handler(CommandHandler("channel_game", channel.channel_game_cmd))
     app.add_handler(CommandHandler("cancel_match", stranger.cancel_match_cmd))
@@ -217,6 +225,8 @@ def build_app(token: str | None = None) -> Application:
         )
     )
     app.add_handler(CallbackQueryHandler(wizard.wizard_callbacks, pattern=r"^(wiz_prov:|wiz_gender:)"))
+    app.add_handler(CallbackQueryHandler(membership.membership_callbacks, pattern=r"^mem_"))
+    app.add_handler(CallbackQueryHandler(admin.admin_callbacks, pattern=r"^admin:"))
     app.add_handler(CallbackQueryHandler(group.gc_help_callback, pattern=r"^gc:"))
     app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:)"))
     app.add_handler(CallbackQueryHandler(gameplay.on_truth_dare, pattern=r"^td:"))
@@ -225,7 +235,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(
         CallbackQueryHandler(
             match_pref_callbacks,
-            pattern=r"^(str_city:|pref_gender:|age_from:|age_to:|str_id:|str_cancel$)",
+            pattern=r"^(str_city:|pref_gender:|age_from:|age_to:|str_id:|str_allow:|str_cancel$)",
         )
     )
     app.add_handler(
@@ -235,9 +245,14 @@ def build_app(token: str | None = None) -> Application:
         )
     )
     app.add_handler(
-        CallbackQueryHandler(fake.fake_callbacks, pattern=r"^(fake_gender:|fake_go:|fguess:)")
+        CallbackQueryHandler(fake.fake_callbacks, pattern=r"^(fake_gender:|fake_go:|fake_reroll:|fguess:)")
     )
-    app.add_handler(CallbackQueryHandler(channel.channel_callbacks, pattern=r"^(ch_mode:|ch_vote:|ch_opt:)"))
+    app.add_handler(
+        CallbackQueryHandler(
+            channel.channel_callbacks,
+            pattern=r"^(ch_mode:|ch_ask:|ch_opt:|ch_close:|ch_next:|ch_end:)",
+        )
+    )
 
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.LOCATION, on_location))

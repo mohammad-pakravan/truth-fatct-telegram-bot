@@ -22,6 +22,51 @@ def init_db() -> None:
     _migrate_postgres_bigint()
     _migrate_match_queue_columns()
     _migrate_location_columns()
+    _migrate_game_player_display()
+    _migrate_channel_columns()
+    _migrate_fake_identity_columns()
+    _migrate_sponsored_channel_province()
+
+
+def _migrate_sponsored_channel_province() -> None:
+    """Add province column to sponsored_channels if missing."""
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(sponsored_channels)").fetchall()
+            cols = {r[1] for r in rows}
+            if cols and "province" not in cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE sponsored_channels ADD COLUMN province VARCHAR(64) DEFAULT ''"
+                )
+        return
+
+    if "postgresql" not in DATABASE_URL:
+        return
+
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'sponsored_channels' "
+                    "AND column_name = 'province'"
+                )
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    text(
+                        "ALTER TABLE sponsored_channels "
+                        "ADD COLUMN province VARCHAR(64) DEFAULT ''"
+                    )
+                )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_sponsored_channels_province "
+                    "ON sponsored_channels (province)"
+                )
+            )
+    except Exception:
+        pass
 
 
 def _migrate_sqlite_columns() -> None:
@@ -44,6 +89,12 @@ def _migrate_sqlite_columns() -> None:
         if "location_updated_at" not in cols:
             conn.exec_driver_sql("ALTER TABLE users ADD COLUMN location_updated_at DATETIME")
 
+        gp_rows = conn.exec_driver_sql("PRAGMA table_info(game_players)").fetchall()
+        gp_cols = {r[1] for r in gp_rows}
+        if "display_label" not in gp_cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE game_players ADD COLUMN display_label VARCHAR(64)"
+            )
 
 def _migrate_location_columns() -> None:
     """Add location columns on users + radius on match_queue (Postgres)."""
@@ -94,6 +145,126 @@ def _migrate_location_columns() -> None:
                     conn.execute(text(f"ALTER TABLE match_queue ADD COLUMN {name} {ddl}"))
         except Exception:
             pass
+
+
+def _migrate_game_player_display() -> None:
+    """Widen identity_mode and add display_label for invite anonymity in-game."""
+    if DATABASE_URL.startswith("sqlite"):
+        return  # handled in _migrate_sqlite_columns
+
+    if "postgresql" not in DATABASE_URL:
+        return
+
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'game_players' AND column_name = 'display_label'"
+                )
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    text("ALTER TABLE game_players ADD COLUMN display_label VARCHAR(64)")
+                )
+    except Exception:
+        pass
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE game_players ALTER COLUMN identity_mode TYPE VARCHAR(16)")
+            )
+    except Exception:
+        pass
+
+
+def _migrate_channel_columns() -> None:
+    """Channel prompt message id + widen vote value for comments."""
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(game_sessions)").fetchall()
+            cols = {r[1] for r in rows}
+            if "channel_prompt_message_id" not in cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE game_sessions ADD COLUMN channel_prompt_message_id BIGINT"
+                )
+        return
+
+    if "postgresql" not in DATABASE_URL:
+        return
+
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'game_sessions' "
+                    "AND column_name = 'channel_prompt_message_id'"
+                )
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    text(
+                        "ALTER TABLE game_sessions "
+                        "ADD COLUMN channel_prompt_message_id BIGINT"
+                    )
+                )
+    except Exception:
+        pass
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE votes ALTER COLUMN value TYPE TEXT"))
+    except Exception:
+        pass
+
+
+def _migrate_fake_identity_columns() -> None:
+    """fingerprint/generated on fake_identities; user_fake_assignments via create_all."""
+    cols = [
+        ("fingerprint", "VARCHAR(64)"),
+        ("generated", "BOOLEAN DEFAULT FALSE"),
+        ("created_at", "TIMESTAMP"),
+    ]
+
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(fake_identities)").fetchall()
+            existing = {r[1] for r in rows}
+            for name, ddl in cols:
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE fake_identities ADD COLUMN {name} {ddl}")
+        return
+
+    if "postgresql" not in DATABASE_URL:
+        return
+
+    for name, ddl in cols:
+        try:
+            with engine.begin() as conn:
+                exists = conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = 'fake_identities' AND column_name = :col"
+                    ),
+                    {"col": name},
+                ).fetchone()
+                if not exists:
+                    conn.execute(text(f"ALTER TABLE fake_identities ADD COLUMN {name} {ddl}"))
+        except Exception:
+            pass
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_fake_identities_fingerprint "
+                    "ON fake_identities (fingerprint)"
+                )
+            )
+    except Exception:
+        pass
 
 
 def _migrate_postgres_bigint() -> None:

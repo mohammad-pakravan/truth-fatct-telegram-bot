@@ -261,7 +261,12 @@ def _compatible(a: MatchQueue, ua: User, b: MatchQueue, ub: User) -> bool:
     if b.play_anonymous and not ua.allow_anonymous_requests:
         return False
 
-    if a.play_anonymous != b.play_anonymous:
+    # Identified seekers can still match anonymous seekers if they allow it
+    # (handled above). Both-anonymous or both-identified also OK.
+    # Block only when one requires identity and the other hides / plays anonymous.
+    if a.require_identity and (b.play_anonymous or not ub.show_identity):
+        return False
+    if b.require_identity and (a.play_anonymous or not ua.show_identity):
         return False
 
     if a.preferred_gender and a.preferred_gender != "any":
@@ -299,11 +304,6 @@ def _compatible(a: MatchQueue, ua: User, b: MatchQueue, ub: User) -> bool:
     if b.age_from is not None and (ua.age is None or ua.age < b.age_from):
         return False
     if b.age_to is not None and (ua.age is None or ua.age > b.age_to):
-        return False
-
-    if a.require_identity and not ub.show_identity:
-        return False
-    if b.require_identity and not ua.show_identity:
         return False
 
     if a.use_fake_identity != b.use_fake_identity:
@@ -379,7 +379,7 @@ def _pair_claimed(
     """Create game for two already-claimed (matching) queue rows, then remove them."""
     if me.use_fake_identity:
         game_type = "fake_identity"
-    elif me.play_anonymous:
+    elif me.play_anonymous or other.play_anonymous:
         game_type = "anonymous"
     elif me.radius_km is not None or me.queue_mode == "nearby":
         game_type = "nearby"

@@ -110,6 +110,18 @@ async def advanced_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         await query.answer()
         st.set_state(tg.id, wait="age_min", adv=prefs)
+
+        from bot.handlers import membership as mem_handler
+
+        gated = await mem_handler.maybe_prompt_sponsor(
+            context=context,
+            query=query,
+            provinces=list(prefs.get("provinces") or []),
+            continue_to="advanced_age",
+        )
+        if gated:
+            return
+
         await query.edit_message_text(
             _summary_message(prefs, T.ADV_AGE_MIN_ASK),
             reply_markup=kb.age_min_keyboard(),

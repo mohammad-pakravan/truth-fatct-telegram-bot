@@ -21,6 +21,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_default_db}")
 DATA_DIR = BASE_DIR / "data"
 QUESTIONS_PATH = DATA_DIR / "questions.json"
 IDENTITIES_PATH = DATA_DIR / "seed_identities.json"
+FAKE_POOLS_PATH = DATA_DIR / "fake_pools.json"
+# Don't re-assign same fake fingerprint to a user until revealed, or this many days pass
+FAKE_ASSIGNMENT_COOLDOWN_DAYS = 14
 
 AGE_FROM_OPTIONS = [16, 18, 20, 22, 25, 28, 30, 35, 40]
 AGE_TO_OPTIONS = [18, 20, 22, 25, 28, 30, 35, 40, 45, 50]
@@ -41,6 +44,14 @@ MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", os.getenv("MINIO_ROOT_PASSWORD"
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "profiles")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() in ("1", "true", "yes")
 MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", "http://localhost:9000").rstrip("/")
+
+# Comma-separated Telegram user IDs that are always admins (bootstrap)
+# Example: ADMIN_IDS=123456789,987654321
+ADMIN_IDS = {
+    int(x.strip())
+    for x in os.getenv("ADMIN_IDS", "").split(",")
+    if x.strip().lstrip("-").isdigit()
+}
 
 
 def require_token() -> str:

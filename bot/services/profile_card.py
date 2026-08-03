@@ -36,6 +36,7 @@ def profile_fields_inline() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🚻 جنسیت", callback_data="pedit:gender"),
             ],
             [
+                InlineKeyboardButton("🦇 لقب", callback_data="pedit:nickname"),
                 InlineKeyboardButton("⚙️ تنظیمات بازی", callback_data="pedit:settings"),
             ],
         ]
@@ -54,6 +55,7 @@ def format_card_caption(user: User, *, intro: Optional[str] = None) -> str:
             "🪪 پروفایل تو",
             "",
             f"👤 نام: {user.display_name or '—'}",
+            f"🦇 لقب: {user.nickname or '—'}",
             f"🚻 جنسیت: {gender_map.get(user.gender or '', '—')}",
             f"🗺 استان: {user.province or '—'}",
             f"🏙 شهر: {user.city or '—'}",

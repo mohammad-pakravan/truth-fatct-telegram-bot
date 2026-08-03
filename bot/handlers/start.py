@@ -5,11 +5,8 @@ from telegram.ext import ContextTypes
 
 from bot.db import get_session
 from bot.keyboards import main_menu
-from bot.services import invite as invite_svc
 from bot.services import users as user_svc
-from bot.services import game_engine
 from bot.texts import fa as T
-from bot import keyboards as kb
 from bot import state as st
 from bot.handlers import wizard
 
@@ -32,6 +29,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         # deep link invite — only start game if profile is ready
         if args and args[0].startswith("inv_"):
+            token = args[0][4:]
             if not complete:
                 await update.message.reply_text(
                     T.WELCOME.format(name=first),
@@ -40,58 +38,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await wizard.start_wizard(
                     update, context, feature="دعوت دوست"
                 )
-                st.set_state(tg.id, pending_invite=args[0][4:])
+                st.set_state(tg.id, pending_invite=token)
                 return
 
-            token = args[0][4:]
-            inv = invite_svc.get_invite(session, token)
-            if not inv:
-                await update.message.reply_text(T.INVITE_INVALID, reply_markup=main_menu())
-                return
-            if inv.owner_id == user.id:
-                await update.message.reply_text(T.INVITE_SELF, reply_markup=main_menu())
-                return
-            label = invite_svc.inviter_label(inv)
-            game = game_engine.create_session(session, "friends", starter=inv.owner)
-            game_engine.add_player(session, game, inv.owner)
-            game_engine.add_player(session, game, user)
-            rnd = game_engine.start_two_player(session, game)
-            from bot.models import User
+            from bot.handlers import friends
 
-            chooser_u = session.get(User, rnd.chooser_user_id)
-            target_u = session.get(User, rnd.target_user_id)
-            chooser_name = user_svc.public_name(chooser_u) if chooser_u else "?"
-            target_name = user_svc.public_name(target_u) if target_u else "?"
-
-            await update.message.reply_text(
-                f"{T.INVITE_ACCEPTED}\nدعوت از: {label}",
-                reply_markup=kb.in_game_menu(is_chooser=rnd.chooser_user_id == user.id),
-            )
-            text = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
-            markup = kb.truth_dare(game.id, rnd.chooser_user_id)
-            if chooser_u and chooser_u.telegram_id:
-                try:
-                    await context.bot.send_message(
-                        chooser_u.telegram_id, text, reply_markup=markup
-                    )
-                    from bot.handlers import gameplay
-
-                    await gameplay.send_in_game_menu(
-                        context, chooser_u.telegram_id, is_chooser=True
-                    )
-                except Exception:
-                    pass
-            if target_u and target_u.telegram_id != tg.id:
-                try:
-                    await context.bot.send_message(
-                        target_u.telegram_id,
-                        f"بازی با {label} شروع شد. منتظر انتخاب جرئت/حقیقت باش.",
-                        reply_markup=kb.in_game_menu(is_chooser=False),
-                    )
-                except Exception:
-                    pass
-            else:
-                await update.message.reply_text("منتظر انتخاب طرف مقابل باش.")
+            await friends.accept_invite_and_notify(update, context, token)
             return
 
     st.clear(tg.id)

@@ -46,10 +46,40 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
                 target_name = game_engine.display_for_player(p)
 
         anonymous = game.game_type == "anonymous"
+        fake_game = game.game_type == "fake_identity"
+        player_a = next((p for p in players if p.user_id == user_a.id), None)
+        player_b = next((p for p in players if p.user_id == user_b.id), None)
+
+        remind_a = remind_b = None
         if anonymous:
             chooser_name = target_name = "ناشناس"
             msg_a = T.MATCH_FOUND + "\n" + T.ANON_OPPONENT
             msg_b = T.MATCH_FOUND + "\n" + T.ANON_OPPONENT
+        elif fake_game and player_a and player_b:
+            msg_a = (
+                T.MATCH_FOUND
+                + "\nحریف:\n"
+                + game_engine.presented_profile(player_b)
+                + "\n\n"
+                + T.FAKE_STAY_HINT
+            )
+            msg_b = (
+                T.MATCH_FOUND
+                + "\nحریف:\n"
+                + game_engine.presented_profile(player_a)
+                + "\n\n"
+                + T.FAKE_STAY_HINT
+            )
+            from bot.services import fake_identity as fake_svc
+
+            if player_a.identity_mode == "fake" and player_a.fake_identity:
+                remind_a = T.FAKE_REMINDER.format(
+                    card=fake_svc.format_card_body(player_a.fake_identity)
+                )
+            if player_b.identity_mode == "fake" and player_b.fake_identity:
+                remind_b = T.FAKE_REMINDER.format(
+                    card=fake_svc.format_card_body(player_b.fake_identity)
+                )
         else:
             msg_a = T.MATCH_FOUND + "\n" + _opponent_blurb(user_a, user_b)
             msg_b = T.MATCH_FOUND + "\n" + _opponent_blurb(user_b, user_a)
@@ -65,11 +95,13 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
     for tg_id in (a_tg, b_tg):
         st.clear(tg_id)
 
-    for tg_id, text, is_chooser in (
-        (a_tg, msg_a, a_is_chooser),
-        (b_tg, msg_b, b_is_chooser),
+    for tg_id, text, is_chooser, remind in (
+        (a_tg, msg_a, a_is_chooser, remind_a),
+        (b_tg, msg_b, b_is_chooser, remind_b),
     ):
         try:
+            if remind:
+                await context.bot.send_message(tg_id, remind)
             await context.bot.send_message(
                 tg_id,
                 text,

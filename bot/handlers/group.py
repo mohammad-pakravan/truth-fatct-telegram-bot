@@ -17,7 +17,9 @@ async def open_group_channel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.message:
         return
     await update.message.reply_text(
-        "بازی در کانال یا گروه؟",
+        "🙂 بازی در کانال / گروه\n\n"
+        "گروه = جمع دوستان با نوبت چرخشی\n"
+        "کانال = صاحب کانال می‌پرسه، مخاطب‌ها رأی/کامنت می‌دن",
         reply_markup=kb.group_channel_help(),
     )
 
@@ -39,14 +41,17 @@ async def group_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat = update.effective_chat
     if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         await update.message.reply_text(
-            "این دستور رو داخل گروه بزن.\n" + T.GROUP_INTRO,
+            "این دستور رو داخل گروه بزن.\n\n" + T.GROUP_INTRO,
             reply_markup=main_menu(),
         )
         return
 
     with get_session() as session:
         user = user_svc.get_or_create_user(
-            session, update.effective_user.id, update.effective_user.username, update.effective_user.full_name
+            session,
+            update.effective_user.id,
+            update.effective_user.username,
+            update.effective_user.full_name,
         )
         game = game_engine.create_session(
             session, "group", starter=user, chat_id=chat.id, max_rounds=8
@@ -54,10 +59,14 @@ async def group_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         game.status = "registering"
         game_engine.add_player(session, game, user)
         sid = game.id
+        names = "، ".join(
+            game_engine.display_for_player(p) for p in game_engine.get_players(session, game)
+        )
 
     await update.message.reply_text(
-        f"ثبت‌نام بازی گروهی شروع شد (#{sid}).\n"
-        "با دکمه زیر عضو شو. وقتی حداقل ۲ نفر شدید، استارتر «شروع بازی» رو بزنه.",
+        T.GROUP_REGISTER_OPEN.format(sid=sid)
+        + "\n\n"
+        + T.GROUP_PLAYERS_LIST.format(count=1, names=names),
         reply_markup=kb.join_group_game(sid),
     )
 
@@ -93,7 +102,9 @@ async def group_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer("ثبت شد!")
         try:
             await query.edit_message_text(
-                f"بازیکنان ({after}): {names}",
+                T.GROUP_REGISTER_OPEN.format(sid=sid)
+                + "\n\n"
+                + T.GROUP_PLAYERS_LIST.format(count=after, names=names),
                 reply_markup=kb.join_group_game(sid),
             )
         except Exception:
@@ -126,15 +137,16 @@ async def group_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     chooser_name = game_engine.display_for_player(p)
                 if p.user_id == rnd.target_user_id:
                     target_name = game_engine.display_for_player(p)
-            text = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
+            text = T.GROUP_TURN.format(chooser=chooser_name, target=target_name)
             markup = kb.truth_dare(game.id, rnd.chooser_user_id)
-            await query.edit_message_text("بازی شروع شد!")
-            if game.chat_id:
-                await context.bot.send_message(game.chat_id, text, reply_markup=markup)
-            if chooser:
-                try:
-                    await context.bot.send_message(
-                        chooser.telegram_id, text, reply_markup=markup
-                    )
-                except Exception:
-                    pass
+            chat_id = game.chat_id
+            chooser_tg = chooser.telegram_id if chooser else None
+
+        await query.edit_message_text(T.GROUP_STARTED)
+        if chat_id:
+            await context.bot.send_message(chat_id, text, reply_markup=markup)
+        if chooser_tg:
+            try:
+                await context.bot.send_message(chooser_tg, text, reply_markup=markup)
+            except Exception:
+                pass

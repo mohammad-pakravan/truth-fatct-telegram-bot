@@ -43,11 +43,19 @@ def profile_complete(user: User) -> bool:
 
 
 def format_profile(user: User, viewer_settings: Optional[User] = None) -> str:
+    """
+    Format a user's profile for another player.
+    When viewer_settings is not None, apply subject's privacy flags.
+    """
+    apply_privacy = viewer_settings is not None
     lines = [f"نام: {user.display_name or '—'}"]
 
-    show_identity = True if viewer_settings is None else user.show_identity
-    show_age = True if viewer_settings is None else user.show_age
-    show_id = False if viewer_settings is None else user.show_private_id
+    if user.nickname:
+        lines.append(f"لقب: {user.nickname}")
+
+    show_identity = True if not apply_privacy else user.show_identity
+    show_age = True if not apply_privacy else user.show_age
+    show_id = False if not apply_privacy else user.show_private_id
 
     if show_identity:
         gender_map = {"male": "پسر", "female": "دختر"}
@@ -64,6 +72,13 @@ def format_profile(user: User, viewer_settings: Optional[User] = None) -> str:
         lines.append(f"آیدی: @{user.username}")
 
     return "\n".join(lines)
+
+
+def may_show_photo(user: User, *, for_opponent: bool = True) -> bool:
+    """Whether this user's photo may be shown to an opponent."""
+    if not for_opponent:
+        return True
+    return bool(user.show_photo and (user.profile_photo_file_id or user.profile_photo_key))
 
 
 def public_name(user: User, mode: str = "real", custom: Optional[str] = None) -> str:

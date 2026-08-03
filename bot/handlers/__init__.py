@@ -1,4 +1,5 @@
 ﻿from bot.handlers import (
+    admin,
     advanced,
     channel,
     fake,
@@ -6,6 +7,7 @@
     gameplay,
     group,
     history,
+    membership,
     menu,
     profile,
     start,
@@ -26,4 +28,6 @@ __all__ = [
     "fake",
     "advanced",
     "wizard",
+    "admin",
+    "membership",
 ]

@@ -6,8 +6,10 @@ from bot.texts import fa as T
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(T.BTN_ADVANCED)],
+            [KeyboardButton(T.BTN_STRANGER)],
+            [KeyboardButton(T.BTN_FAKE)],
             [KeyboardButton(T.BTN_NEARBY), KeyboardButton(T.BTN_ANON)],
+            [KeyboardButton(T.BTN_ADVANCED)],
             [KeyboardButton(T.BTN_HUB_PROFILE)],
             [KeyboardButton(T.BTN_HUB_FRIENDS)],
             [KeyboardButton(T.BTN_HELP), KeyboardButton(T.BTN_CONTACT)],
@@ -363,6 +365,15 @@ def identity_pref() -> InlineKeyboardMarkup:
     )
 
 
+def allow_anon_pref() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(T.STRANGER_ALLOW_ANON_YES, callback_data="str_allow:yes")],
+            [InlineKeyboardButton(T.STRANGER_ALLOW_ANON_NO, callback_data="str_allow:no")],
+        ]
+    )
+
+
 def age_options(prefix: str, ages: list[int]) -> InlineKeyboardMarkup:
     rows = []
     row = []
@@ -374,11 +385,24 @@ def age_options(prefix: str, ages: list[int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def fake_gender_pick() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(T.FAKE_GENDER_MALE, callback_data="fake_gender:male"),
+                InlineKeyboardButton(T.FAKE_GENDER_FEMALE, callback_data="fake_gender:female"),
+            ],
+            [InlineKeyboardButton(T.FAKE_GENDER_ANY, callback_data="fake_gender:any")],
+        ]
+    )
+
+
 def fake_continue(session_token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(T.CONTINUE_FAKE, callback_data=f"fake_go:{session_token}:fake")],
             [InlineKeyboardButton(T.CONTINUE_REAL, callback_data=f"fake_go:{session_token}:real")],
+            [InlineKeyboardButton(T.FAKE_REROLL, callback_data=f"fake_reroll:{session_token}")],
         ]
     )
 
@@ -403,18 +427,20 @@ def channel_answer_mode() -> InlineKeyboardMarkup:
     )
 
 
-def channel_truth_dare_vote(session_id: int, round_id: int) -> InlineKeyboardMarkup:
+def channel_owner_truth_dare() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(T.BTN_TRUTH, callback_data=f"ch_vote:{session_id}:{round_id}:truth"),
-                InlineKeyboardButton(T.BTN_DARE, callback_data=f"ch_vote:{session_id}:{round_id}:dare"),
+                InlineKeyboardButton(T.BTN_TRUTH, callback_data="ch_ask:truth"),
+                InlineKeyboardButton(T.BTN_DARE, callback_data="ch_ask:dare"),
             ]
         ]
     )
 
 
-def channel_option_votes(session_id: int, round_id: int, options: list[str]) -> InlineKeyboardMarkup:
+def channel_option_votes(
+    session_id: int, round_id: int, options: list[str]
+) -> InlineKeyboardMarkup:
     rows = []
     for i, opt in enumerate(options):
         rows.append(
@@ -424,13 +450,158 @@ def channel_option_votes(session_id: int, round_id: int, options: list[str]) -> 
                 )
             ]
         )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                T.CHANNEL_CLOSE_VOTING,
+                callback_data=f"ch_close:{session_id}:{round_id}",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(rows)
+
+
+def channel_close_only(session_id: int, round_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    T.CHANNEL_CLOSE_VOTING,
+                    callback_data=f"ch_close:{session_id}:{round_id}",
+                )
+            ]
+        ]
+    )
+
+
+def channel_after_round(session_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(T.CHANNEL_NEXT, callback_data=f"ch_next:{session_id}")],
+            [InlineKeyboardButton(T.CHANNEL_END, callback_data=f"ch_end:{session_id}")],
+        ]
+    )
 
 
 def cancel_match() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(T.BTN_LEAVE_QUEUE, callback_data="str_cancel")]]
     )
+
+
+def sponsor_join_keyboard(channels) -> InlineKeyboardMarkup:
+    """Join buttons use callbacks so clicks can be counted in admin reports."""
+    rows = []
+    for ch in channels:
+        title = (getattr(ch, "title", None) or "کانال اسپانسری").strip()[:40]
+        if ch.invite_link:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        T.SPONSOR_BTN_JOIN.format(title=title),
+                        callback_data=f"mem_join:{ch.id}",
+                    )
+                ]
+            )
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"📢 «{title}» — لینک نداره",
+                        callback_data="mem_noop",
+                    )
+                ]
+            )
+    rows.append(
+        [InlineKeyboardButton(T.SPONSOR_BTN_CHECK, callback_data="mem_check")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_home_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(T.ADMIN_BTN_REPORTS, callback_data="admin:reports")],
+            [InlineKeyboardButton(T.ADMIN_BTN_CHANNELS, callback_data="admin:channels")],
+            [InlineKeyboardButton(T.ADMIN_BTN_ADMINS, callback_data="admin:admins")],
+            [InlineKeyboardButton(T.ADMIN_BTN_REFRESH, callback_data="admin:home")],
+        ]
+    )
+
+
+def admin_reports_keyboard(period: str = "day") -> InlineKeyboardMarkup:
+    def mark(key: str, label: str) -> str:
+        return f"• {label}" if key == period else label
+
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(mark("day", "امروز"), callback_data="admin:rep:overview:day"),
+                InlineKeyboardButton(mark("week", "هفته"), callback_data="admin:rep:overview:week"),
+                InlineKeyboardButton(mark("month", "ماه"), callback_data="admin:rep:overview:month"),
+            ],
+            [InlineKeyboardButton(T.ADMIN_BTN_REP_USERS, callback_data="admin:rep:users")],
+            [InlineKeyboardButton(T.ADMIN_BTN_REP_PROVINCES, callback_data="admin:rep:provinces")],
+            [
+                InlineKeyboardButton(
+                    T.ADMIN_BTN_REP_SPONSORS, callback_data=f"admin:rep:sponsors:{period}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.ADMIN_BTN_REP_GAMES, callback_data=f"admin:rep:games:{period}"
+                )
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")],
+        ]
+    )
+
+
+def admin_channels_keyboard(channels) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(T.ADMIN_BTN_ADD_CHANNEL, callback_data="admin:ch_add")]]
+    for ch in channels:
+        flag = "✅" if ch.active else "⏸"
+        prov = (ch.province or "?")[:12]
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{flag} #{ch.id} {prov}",
+                    callback_data=f"admin:ch_toggle:{ch.id}",
+                ),
+                InlineKeyboardButton(
+                    T.ADMIN_BTN_DEL_CHANNEL.format(id=ch.id),
+                    callback_data=f"admin:ch_del:{ch.id}",
+                ),
+            ]
+        )
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_admins_keyboard(admin_rows: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    """admin_rows: list of (telegram_id, tag) where tag is env/db."""
+    rows = [[InlineKeyboardButton(T.ADMIN_BTN_ADD_ADMIN, callback_data="admin:ad_add")]]
+    for tid, tag in admin_rows:
+        if tag == "env":
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"🔒 {tid} {T.ADMIN_ENV_TAG}",
+                        callback_data="admin:noop",
+                    )
+                ]
+            )
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        T.ADMIN_BTN_DEL_ADMIN.format(tid=tid),
+                        callback_data=f"admin:ad_del:{tid}",
+                    )
+                ]
+            )
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")])
+    return InlineKeyboardMarkup(rows)
 
 
 def queue_menu() -> ReplyKeyboardMarkup:
@@ -444,6 +615,7 @@ def settings_keyboard(user) -> InlineKeyboardMarkup:
     def flag(v: bool) -> str:
         return T.ON if v else T.OFF
 
+    nick = user.nickname or T.SETTINGS_NICK_EMPTY
     return InlineKeyboardMarkup(
         [
             [
@@ -460,7 +632,7 @@ def settings_keyboard(user) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    f"نمایش هویت: {flag(user.show_identity)}",
+                    f"نمایش هویت به طرف: {flag(user.show_identity)}",
                     callback_data="set:show_identity",
                 )
             ],
@@ -472,7 +644,7 @@ def settings_keyboard(user) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    f"نمایش عکس: {flag(user.show_photo)}",
+                    f"نمایش عکس پروفایل: {flag(user.show_photo)}",
                     callback_data="set:show_photo",
                 )
             ],
@@ -480,6 +652,12 @@ def settings_keyboard(user) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     f"نمایش آیدی خصوصی: {flag(user.show_private_id)}",
                     callback_data="set:show_private_id",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.SETTINGS_NICK_BTN.format(nick=nick[:24]),
+                    callback_data="pedit:nickname",
                 )
             ],
         ]

@@ -43,7 +43,7 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     mode = st.get(tg.id).get("mode")
     waiting = st.get(tg.id).get("waiting")
 
-    if mode != "profile" and waiting not in {"name", "city", "age", "photo", "settings"}:
+    if mode != "profile" and waiting not in {"name", "city", "age", "photo", "settings", "nickname"}:
         return
 
     if text == T.BTN_BACK:
@@ -75,6 +75,19 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             new_val = user.display_name
         st.set_state(tg.id, waiting=None)
         await update.message.reply_text(f"اسم عوض شد به «{new_val}»")
+        return
+    if waiting == "nickname":
+        with get_session() as session:
+            user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+            if text in {"-", "—", "پاک", "حذف"}:
+                user.nickname = None
+                st.set_state(tg.id, waiting=None)
+                await update.message.reply_text(T.NICKNAME_CLEARED)
+                return
+            user.nickname = text[:64]
+            nick = user.nickname
+        st.set_state(tg.id, waiting=None)
+        await update.message.reply_text(T.NICKNAME_SAVED.format(nick=nick))
         return
     if waiting == "city":
         if len(text) < 2:
@@ -143,6 +156,10 @@ async def profile_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             st.set_state(tg.id, waiting="photo")
             await msg.reply_text(T.ASK_PHOTO, reply_markup=kb.skip_photo_menu())
             return
+        if action == "nickname":
+            st.set_state(tg.id, waiting="nickname")
+            await msg.reply_text(T.ASK_NICKNAME, reply_markup=kb.back_menu())
+            return
         if action == "settings":
             with get_session() as session:
                 user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
@@ -171,6 +188,18 @@ async def profile_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
             user.province = province
+
+        from bot.handlers import membership as mem_handler
+
+        gated = await mem_handler.maybe_prompt_sponsor(
+            context=context,
+            query=query,
+            provinces=province,
+            continue_to="profile_done",
+        )
+        if gated:
+            return
+
         try:
             await query.edit_message_text(f"استان عوض شد به «{province}»")
         except Exception:

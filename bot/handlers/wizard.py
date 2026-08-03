@@ -20,11 +20,12 @@ FEATURE_LABELS = {
     T.BTN_ADVANCED: "چت و بازی پیشرفته",
     T.BTN_NEARBY: "افراد نزدیک",
     T.BTN_ANON: "بازی با ناشناس",
+    T.BTN_HUB_PROFILE: "شخصی‌سازی مشخصات",
     T.BTN_HUB_FRIENDS: "بازی با دوستان",
     T.BTN_FRIENDS: "لینک شخصی",
-    T.BTN_GROUP_CHANNEL: "گروه / کانال",
+    T.BTN_GROUP_CHANNEL: "بازی در کانال / گروه",
     T.BTN_STRANGER: "بازی با غریبه",
-    T.BTN_FAKE: "هویت رندوم",
+    T.BTN_FAKE: "بازی با هویت رندوم",
     "دعوت دوست": "قبول دعوت دوست",
 }
 
@@ -203,11 +204,24 @@ async def wizard_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if data.startswith("wiz_prov:") and step == "province":
         idx = int(data.split(":")[1])
+        province = PROVINCES[idx]
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
-            user.province = PROVINCES[idx]
+            user.province = province
+
+        from bot.handlers import membership as mem_handler
+
+        gated = await mem_handler.maybe_prompt_sponsor(
+            context=context,
+            query=query,
+            provinces=province,
+            continue_to="wizard_city",
+        )
+        if gated:
+            return
+
         st.set_state(tg.id, wizard_step="city")
-        await query.edit_message_text(f"استان «{PROVINCES[idx]}» ثبت شد 🗺")
+        await query.edit_message_text(f"استان «{province}» ثبت شد 🗺")
         await query.message.reply_text(T.WIZARD_ASK_CITY, reply_markup=kb.wizard_cancel_menu())
         return
 
@@ -247,7 +261,9 @@ async def _finish_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     from bot.services.profile_card import send_profile_card
 
     tg = update.effective_user
-    pending = st.get(tg.id).get("pending_feature")
+    data = st.get(tg.id)
+    pending = data.get("pending_feature")
+    pending_invite = data.get("pending_invite")
     st.clear(tg.id)
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
@@ -256,6 +272,23 @@ async def _finish_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session.expunge(user)
 
     done = T.WIZARD_DONE.format(name=display)
+
+    # Friend invite deep-link: resume match after profile is complete
+    if pending_invite:
+        await send_profile_card(
+            update.message,
+            context,
+            user,
+            intro=done,
+            with_main_menu=False,
+        )
+        from bot.handlers import friends
+
+        await friends.accept_invite_and_notify(
+            update, context, pending_invite, intro=T.INVITE_RESUMED
+        )
+        return
+
     if pending:
         label = FEATURE_LABELS.get(pending, pending)
         done += f"\n\nحالا دوباره «{label}» رو از منو بزن تا بریم 🚀"

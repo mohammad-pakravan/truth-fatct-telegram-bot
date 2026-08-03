@@ -73,25 +73,47 @@ async def game_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if not other_player:
                 await update.message.reply_text("پروفایل حریف پیدا نشد.")
                 return True
-            if game.game_type == "anonymous":
+            if game.game_type == "anonymous" or other_player.identity_mode == "anonymous":
                 await update.message.reply_text(T.ANON_OPPONENT)
                 return True
-            profile = user_svc.format_profile(other_player.user, viewer_settings=user)
-            await update.message.reply_text(f"پروفایل حریف:\n{profile}")
+            # Fake-identity games: show presented persona only (never leak real profile)
+            if game.game_type == "fake_identity":
+                caption = "پروفایل حریف:\n" + game_engine.presented_profile(other_player)
+                await update.message.reply_text(caption)
+                return True
+            other = other_player.user
+            profile = user_svc.format_profile(other, viewer_settings=user)
+            caption = f"پروفایل حریف:\n{profile}"
+            if user_svc.may_show_photo(other, for_opponent=True):
+                try:
+                    if other.profile_photo_file_id:
+                        await update.message.reply_photo(
+                            photo=other.profile_photo_file_id, caption=caption[:1024]
+                        )
+                        return True
+                except Exception:
+                    pass
+            await update.message.reply_text(caption)
             return True
 
         if text == T.BTN_GAME_END:
             game_engine.finish_game(session, game)
             summary = game.summary or ""
+            status = game.status
+            game_id = game.id
             for p in players:
                 try:
                     await context.bot.send_message(
                         p.user.telegram_id,
                         f"{T.GAME_ENDED_BY_USER}\n{summary}",
-                        reply_markup=kb.main_menu(),
+                        reply_markup=kb.main_menu() if status != "guessing" else None,
                     )
                 except Exception:
                     pass
+            if status == "guessing":
+                from bot.handlers import fake as fake_handler
+
+                await fake_handler.prompt_final_guess(context, game_id, players)
             return True
 
         if text == T.BTN_GAME_WAIT:
@@ -317,10 +339,11 @@ async def _notify_and_advance(context, session, game, user, answer_text):
             if p.user_id == nxt.target_user_id:
                 target_name = game_engine.display_for_player(p)
 
-    text = (
-        f"{T.ROUND_INFO.format(n=game.round_number, max=game.max_rounds)}\n"
-        + T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
-    )
+    if game.game_type == "group":
+        choose = T.GROUP_TURN.format(chooser=chooser_name, target=target_name)
+    else:
+        choose = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
+    text = f"{T.ROUND_INFO.format(n=game.round_number, max=game.max_rounds)}\n{choose}"
     markup = kb.truth_dare(game.id, nxt.chooser_user_id)
     if chooser:
         try:
