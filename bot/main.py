@@ -6,7 +6,9 @@ from telegram.error import NetworkError, TimedOut
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChosenInlineResultHandler,
     CommandHandler,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
@@ -32,6 +34,7 @@ from bot.handlers import (
     gameplay,
     group,
     history,
+    inline_mode,
     membership,
     menu,
     profile,
@@ -121,6 +124,9 @@ async def on_menu_buttons(update, context):
         return
 
     if await gameplay.game_menu_text(update, context):
+        return
+
+    if await gameplay.custom_prompt_text(update, context):
         return
 
     if await menu.hub_profile_text(update, context):
@@ -217,6 +223,9 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CommandHandler("channel_game", channel.channel_game_cmd))
     app.add_handler(CommandHandler("cancel_match", stranger.cancel_match_cmd))
 
+    app.add_handler(InlineQueryHandler(inline_mode.inline_query))
+    app.add_handler(ChosenInlineResultHandler(inline_mode.chosen_inline_result))
+
     app.add_handler(CallbackQueryHandler(friends.friends_callbacks, pattern=r"^inv_disp:"))
     app.add_handler(
         CallbackQueryHandler(
@@ -230,6 +239,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CallbackQueryHandler(group.gc_help_callback, pattern=r"^gc:"))
     app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:)"))
     app.add_handler(CallbackQueryHandler(gameplay.on_truth_dare, pattern=r"^td:"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_game_action, pattern=r"^gact:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_skip, pattern=r"^skip:"))
     app.add_handler(CallbackQueryHandler(stranger.nearby_callbacks, pattern=r"^near_r:"))
     app.add_handler(
@@ -264,7 +274,15 @@ def build_app(token: str | None = None) -> Application:
 def main() -> None:
     app = build_app()
     logger.info("Bot starting…")
-    app.run_polling(allowed_updates=["message", "callback_query", "channel_post"])
+    app.run_polling(
+        allowed_updates=[
+            "message",
+            "callback_query",
+            "channel_post",
+            "inline_query",
+            "chosen_inline_result",
+        ]
+    )
 
 
 if __name__ == "__main__":

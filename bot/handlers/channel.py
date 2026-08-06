@@ -55,7 +55,13 @@ async def channel_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     st.set_state(tg.id, mode="channel", wait="channel_id")
-    await update.message.reply_text(T.CHANNEL_ID_ASK + T.CHANNEL_INTRO, reply_markup=main_menu())
+    from bot.config import BOT_USERNAME
+
+    bot = f"@{BOT_USERNAME}" if BOT_USERNAME else "@YourBot"
+    await update.message.reply_text(
+        T.CHANNEL_ID_ASK + T.CHANNEL_INTRO.format(bot=bot),
+        reply_markup=main_menu(),
+    )
 
 
 async def channel_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

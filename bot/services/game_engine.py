@@ -16,6 +16,7 @@ def create_session(
     starter: Optional[User] = None,
     chat_id: Optional[int] = None,
     max_rounds: int = 5,
+    inline_message_id: Optional[str] = None,
 ) -> GameSession:
     gs = GameSession(
         game_type=game_type,
@@ -23,10 +24,37 @@ def create_session(
         chat_id=chat_id,
         starter_user_id=starter.id if starter else None,
         max_rounds=max_rounds,
+        inline_message_id=inline_message_id,
     )
     session.add(gs)
     session.flush()
     return gs
+
+
+def find_registering_group(
+    session: Session,
+    *,
+    chat_id: Optional[int] = None,
+    inline_message_id: Optional[str] = None,
+) -> Optional[GameSession]:
+    """Open group registration for a chat or inline message, if any."""
+    q = session.query(GameSession).filter(
+        GameSession.game_type == "group",
+        GameSession.status == "registering",
+    )
+    if inline_message_id:
+        row = q.filter(GameSession.inline_message_id == inline_message_id).order_by(
+            GameSession.id.desc()
+        ).first()
+        if row:
+            return row
+    if chat_id is not None:
+        return (
+            q.filter(GameSession.chat_id == chat_id)
+            .order_by(GameSession.id.desc())
+            .first()
+        )
+    return None
 
 
 def add_player(
@@ -135,11 +163,20 @@ def start_group_rotation(session: Session, game: GameSession) -> Round:
     return rnd
 
 
-def apply_choice(session: Session, rnd: Round, choice: str) -> str:
-    prompt = random_prompt(choice)  # type: ignore[arg-type]
+def apply_choice(
+    session: Session, rnd: Round, choice: str, prompt: Optional[str] = None
+) -> str:
+    """Set truth/dare. If prompt is omitted, pick a random bank prompt."""
     rnd.choice = choice
-    rnd.prompt_text = prompt
-    return prompt
+    text = (prompt or "").strip() or random_prompt(choice)  # type: ignore[arg-type]
+    rnd.prompt_text = text
+    return text
+
+
+def set_pending_choice(session: Session, rnd: Round, choice: str) -> None:
+    """Chooser picked truth/dare; waiting for their custom question text."""
+    rnd.choice = choice
+    rnd.prompt_text = None
 
 
 def submit_answer(session: Session, rnd: Round, text: Optional[str]) -> None:

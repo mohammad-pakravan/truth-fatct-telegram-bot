@@ -27,6 +27,9 @@ FAKE_ASSIGNMENT_COOLDOWN_DAYS = 14
 
 AGE_FROM_OPTIONS = [16, 18, 20, 22, 25, 28, 30, 35, 40]
 AGE_TO_OPTIONS = [18, 20, 22, 25, 28, 30, 35, 40, 45, 50]
+# Minimum real age allowed on profiles / match queue
+MIN_USER_AGE = 16
+MAX_USER_AGE = 99
 
 HISTORY_LIMIT = 20
 CONTACT_USERNAME = os.getenv("CONTACT_USERNAME", "").lstrip("@")

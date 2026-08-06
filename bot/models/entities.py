@@ -79,6 +79,8 @@ class GameSession(Base):
     # waiting | registering | playing | guessing | finished | cancelled
     status: Mapped[str] = mapped_column(String(32), default="waiting", index=True)
     chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    # Telegram inline message id when game was started via @bot inline mode
+    inline_message_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     channel_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     discussion_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     starter_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)

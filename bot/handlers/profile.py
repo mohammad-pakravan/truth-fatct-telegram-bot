@@ -101,8 +101,10 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"شهر عوض شد به «{new_val}»")
         return
     if waiting == "age":
-        if not text.isdigit() or not (10 <= int(text) <= 99):
-            await update.message.reply_text("سن معتبر بفرست (۱۰ تا ۹۹).")
+        from bot.config import MAX_USER_AGE, MIN_USER_AGE
+
+        if not text.isdigit() or not (MIN_USER_AGE <= int(text) <= MAX_USER_AGE):
+            await update.message.reply_text(T.AGE_INVALID)
             return
         age = int(text)
         with get_session() as session:

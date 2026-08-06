@@ -7,10 +7,12 @@ from telegram.ext import ContextTypes
 from bot import keyboards as kb
 from bot import state as st
 from bot.db import get_session
-from bot.models import User
+from bot.keyboards import main_menu
+from bot.models import MatchQueue, User
 from bot.services import game_engine
 from bot.services import matchmaker
 from bot.services import users as user_svc
+from bot.services.glass_msg import show_td_glass, upsert_hub
 from bot.texts import fa as T
 
 logger = logging.getLogger(__name__)
@@ -21,7 +23,7 @@ def _opponent_blurb(me: User, other: User) -> str:
 
 
 async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.MatchResult) -> None:
-    """Notify both players and switch them into the in-game keyboard (idempotent)."""
+    """Edit (or send) one hub message per player for match start + truth/dare."""
     with get_session() as session:
         game = game_engine.get_session(session, result.game_id)
         if not game or game.status not in ("playing", "guessing"):
@@ -53,17 +55,17 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
         remind_a = remind_b = None
         if anonymous:
             chooser_name = target_name = "ناشناس"
-            msg_a = T.MATCH_FOUND + "\n" + T.ANON_OPPONENT
-            msg_b = T.MATCH_FOUND + "\n" + T.ANON_OPPONENT
+            body_a = T.MATCH_FOUND + "\n" + T.ANON_OPPONENT
+            body_b = T.MATCH_FOUND + "\n" + T.ANON_OPPONENT
         elif fake_game and player_a and player_b:
-            msg_a = (
+            body_a = (
                 T.MATCH_FOUND
                 + "\nحریف:\n"
                 + game_engine.presented_profile(player_b)
                 + "\n\n"
                 + T.FAKE_STAY_HINT
             )
-            msg_b = (
+            body_b = (
                 T.MATCH_FOUND
                 + "\nحریف:\n"
                 + game_engine.presented_profile(player_a)
@@ -81,42 +83,66 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
                     card=fake_svc.format_card_body(player_b.fake_identity)
                 )
         else:
-            msg_a = T.MATCH_FOUND + "\n" + _opponent_blurb(user_a, user_b)
-            msg_b = T.MATCH_FOUND + "\n" + _opponent_blurb(user_b, user_a)
+            body_a = T.MATCH_FOUND + "\n" + _opponent_blurb(user_a, user_b)
+            body_b = T.MATCH_FOUND + "\n" + _opponent_blurb(user_b, user_a)
 
         chooser_id = rnd.chooser_user_id if rnd else None
-        td_text = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
-        td_markup = kb.truth_dare(game.id, chooser_id) if rnd and chooser_id else None
+        turn = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
+        if rnd:
+            turn = f"{T.ROUND_INFO.format(n=game.round_number, max=game.max_rounds)}\n{turn}"
 
         a_tg, b_tg = user_a.telegram_id, user_b.telegram_id
         a_is_chooser = bool(rnd and rnd.chooser_user_id == user_a.id)
         b_is_chooser = bool(rnd and rnd.chooser_user_id == user_b.id)
+        game_id = game.id
 
+    hubs = {
+        a_tg: st.get(a_tg).get("game_hub_message_id"),
+        b_tg: st.get(b_tg).get("game_hub_message_id"),
+    }
     for tg_id in (a_tg, b_tg):
         st.clear(tg_id)
 
-    for tg_id, text, is_chooser, remind in (
-        (a_tg, msg_a, a_is_chooser, remind_a),
-        (b_tg, msg_b, b_is_chooser, remind_b),
+    for tg_id, body, is_chooser, remind in (
+        (a_tg, body_a, a_is_chooser, remind_a),
+        (b_tg, body_b, b_is_chooser, remind_b),
     ):
         try:
             if remind:
                 await context.bot.send_message(tg_id, remind)
-            await context.bot.send_message(
-                tg_id,
-                text,
-                reply_markup=kb.in_game_menu(is_chooser=is_chooser),
-            )
+            if is_chooser and chooser_id:
+                hub_text = T.MATCH_HUB.format(match_body=body)
+                mid = await upsert_hub(
+                    context.bot,
+                    tg_id,
+                    hub_text,
+                    message_id=hubs.get(tg_id),
+                    reply_kb=kb.in_game_menu(is_chooser=True),
+                    replace_keyboard=True,
+                )
+                glass_id = await show_td_glass(
+                    context.bot,
+                    tg_id,
+                    session_id=game_id,
+                    chooser_id=chooser_id,
+                    turn_text=turn,
+                )
+                st.set_state(
+                    tg_id, game_hub_message_id=mid, game_glass_message_id=glass_id
+                )
+            else:
+                text = T.MATCH_START_WAITER.format(match_body=body, turn=turn)
+                mid = await upsert_hub(
+                    context.bot,
+                    tg_id,
+                    text,
+                    message_id=hubs.get(tg_id),
+                    reply_kb=kb.in_game_menu(is_chooser=False),
+                    replace_keyboard=True,
+                )
+                st.set_state(tg_id, game_hub_message_id=mid)
         except Exception:
             logger.exception("Failed to notify matched user %s", tg_id)
-
-    if td_markup and chooser_id:
-        chooser_tg = a_tg if a_is_chooser else b_tg if b_is_chooser else None
-        if chooser_tg:
-            try:
-                await context.bot.send_message(chooser_tg, td_text, reply_markup=td_markup)
-            except Exception:
-                logger.exception("Failed to send truth/dare prompt to %s", chooser_tg)
 
 
 async def enqueue_and_maybe_match(
@@ -129,11 +155,20 @@ async def enqueue_and_maybe_match(
     fake_id=None,
     queue_mode: str = "stranger",
     edit_message=None,
+    hub_message_id: int | None = None,
 ) -> bool:
     """
     Enqueue user, try immediate match, otherwise show waiting UI.
     Returns True if matched immediately.
+    Keeps a single hub message (edit in place) for searching → match.
     """
+    tg_id = telegram_user.id
+    if hub_message_id is not None:
+        st.set_state(tg_id, game_hub_message_id=hub_message_id)
+    elif edit_message is not None:
+        st.set_state(tg_id, game_hub_message_id=edit_message.message_id)
+    hub_id = st.get(tg_id).get("game_hub_message_id")
+
     with matchmaker.match_section():
         with get_session() as session:
             user = user_svc.get_or_create_user(
@@ -141,19 +176,37 @@ async def enqueue_and_maybe_match(
             )
             active = game_engine.active_session_for_user(session, user)
             if active:
-                rnd = game_engine.get_active_round(session, active)
-                is_chooser = bool(rnd and rnd.chooser_user_id == user.id)
-                markup = kb.in_game_menu(is_chooser=is_chooser)
-                if edit_message:
+                if hub_id:
                     try:
-                        await edit_message.edit_text(T.ALREADY_IN_GAME)
+                        await upsert_hub(
+                            context.bot, tg_id, T.ALREADY_IN_GAME, message_id=hub_id
+                        )
                     except Exception:
                         pass
-                await context.bot.send_message(
-                    telegram_user.id,
-                    T.ALREADY_IN_GAME,
-                    reply_markup=markup,
-                )
+                from bot.handlers import gameplay
+
+                await gameplay.resume_active_game_keyboard(context, telegram_user.id)
+                return False
+
+            from bot.config import MIN_USER_AGE
+
+            if user.age is None or user.age < MIN_USER_AGE:
+                msg = T.AGE_TOO_YOUNG
+                if hub_id:
+                    try:
+                        await upsert_hub(
+                            context.bot,
+                            tg_id,
+                            msg,
+                            message_id=hub_id,
+                            reply_kb=main_menu(),
+                        )
+                    except Exception:
+                        pass
+                else:
+                    await context.bot.send_message(
+                        telegram_user.id, msg, reply_markup=main_menu()
+                    )
                 return False
 
             try:
@@ -180,9 +233,11 @@ async def enqueue_and_maybe_match(
                     await gameplay.resume_active_game_keyboard(context, telegram_user.id)
                     return False
                 if str(exc) == "match_in_progress":
-                    await context.bot.send_message(
-                        telegram_user.id,
+                    await upsert_hub(
+                        context.bot,
+                        tg_id,
                         "الان در حال مچ شدنت هستیم… چند لحظه صبر کن.",
+                        message_id=hub_id,
                     )
                     return False
                 raise
@@ -191,32 +246,38 @@ async def enqueue_and_maybe_match(
             if result:
                 match_ids = result
             else:
+                me_row = (
+                    session.query(MatchQueue)
+                    .filter_by(user_id=user.id, status=matchmaker.STATUS_WAITING)
+                    .one_or_none()
+                )
                 pos = matchmaker.queue_position(session, user)
-                total = matchmaker.waiting_count(session)
-                wait_text = T.WAITING_MATCH.format(pos=pos, total=total)
-                st.set_state(telegram_user.id, mode="queued")
-                if edit_message:
-                    try:
-                        await edit_message.edit_text(wait_text, reply_markup=kb.cancel_match())
-                    except Exception:
-                        pass
-                    await context.bot.send_message(
-                        telegram_user.id,
-                        T.WAITING_MATCH_HINT,
-                        reply_markup=kb.queue_menu(),
-                    )
-                else:
-                    await context.bot.send_message(
-                        telegram_user.id,
-                        wait_text,
-                        reply_markup=kb.queue_menu(),
-                    )
+                total = matchmaker.waiting_count(
+                    session,
+                    use_fake_identity=bool(me_row.use_fake_identity) if me_row else None,
+                    queue_mode=me_row.queue_mode if me_row else None,
+                )
+                mode_key = (me_row.queue_mode if me_row else queue_mode) or "stranger"
+                mode_label = {
+                    "stranger": "غریبه",
+                    "fake": "هویت رندوم",
+                    "nearby": "نزدیک من",
+                    "advanced": "جستجوی پیشرفته",
+                    "anonymous": "ناشناس",
+                }.get(mode_key, mode_key)
+                wait_text = T.WAITING_MATCH.format(
+                    pos=pos, total=total, mode=mode_label
+                )
+                mid = await upsert_hub(
+                    context.bot,
+                    tg_id,
+                    wait_text,
+                    message_id=hub_id,
+                    reply_kb=kb.queue_menu(),
+                    replace_keyboard=True,
+                )
+                st.set_state(tg_id, mode="queued", game_hub_message_id=mid)
                 return False
 
-    if edit_message:
-        try:
-            await edit_message.edit_text(T.MATCH_FOUND)
-        except Exception:
-            pass
     await deliver_match(context, match_ids)
     return True

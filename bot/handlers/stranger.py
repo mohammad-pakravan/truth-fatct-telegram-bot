@@ -152,7 +152,8 @@ async def open_anonymous(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if await _guard_active_game(update, context, session, user):
             return
 
-    await update.message.reply_text(T.ANON_SEARCHING)
+    sent = await update.message.reply_text(T.ANON_SEARCHING, reply_markup=kb.queue_menu())
+    st.set_state(tg.id, game_hub_message_id=sent.message_id, mode="queued")
     await match_flow.enqueue_and_maybe_match(
         context,
         telegram_user=tg,
@@ -165,6 +166,7 @@ async def open_anonymous(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "play_anonymous": True,
         },
         queue_mode="anonymous",
+        hub_message_id=sent.message_id,
     )
 
 

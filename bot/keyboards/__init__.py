@@ -18,20 +18,17 @@ def main_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def in_game_menu(is_chooser: bool = False) -> ReplyKeyboardMarkup:
+def in_game_menu(
+    is_chooser: bool = False, *, awaiting_answer: bool = False
+) -> ReplyKeyboardMarkup:
+    """Compact reply keyboard (profile/end). Truth/dare use glass buttons."""
     first_row = [KeyboardButton(T.BTN_GAME_PROFILE), KeyboardButton(T.BTN_GAME_END)]
-    second_row = (
-        [KeyboardButton(T.BTN_DARE), KeyboardButton(T.BTN_TRUTH)]
-        if is_chooser
-        else [KeyboardButton(T.BTN_GAME_WAIT)]
-    )
-    return ReplyKeyboardMarkup(
-        [
-            first_row,
-            second_row,
-        ],
-        resize_keyboard=True,
-    )
+    if awaiting_answer:
+        return ReplyKeyboardMarkup(
+            [first_row, [KeyboardButton(T.BTN_SKIP)]],
+            resize_keyboard=True,
+        )
+    return ReplyKeyboardMarkup([first_row], resize_keyboard=True)
 
 
 def back_menu() -> ReplyKeyboardMarkup:
@@ -282,17 +279,23 @@ def invite_display_mode() -> InlineKeyboardMarkup:
 
 
 def truth_dare(session_id: int, chooser_id: int) -> InlineKeyboardMarkup:
+    """Glass buttons: truth / dare only. Profile/end stay on reply keyboard."""
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(T.BTN_TRUTH, callback_data=f"td:{session_id}:{chooser_id}:truth"),
-                InlineKeyboardButton(T.BTN_DARE, callback_data=f"td:{session_id}:{chooser_id}:dare"),
-            ]
+                InlineKeyboardButton(
+                    T.BTN_TRUTH, callback_data=f"td:{session_id}:{chooser_id}:truth"
+                ),
+                InlineKeyboardButton(
+                    T.BTN_DARE, callback_data=f"td:{session_id}:{chooser_id}:dare"
+                ),
+            ],
         ]
     )
 
 
 def skip_answer(session_id: int) -> InlineKeyboardMarkup:
+    """Glass skip for group chats."""
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(T.BTN_SKIP, callback_data=f"skip:{session_id}")]]
     )
@@ -301,6 +304,18 @@ def skip_answer(session_id: int) -> InlineKeyboardMarkup:
 def group_channel_help() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
+            [
+                InlineKeyboardButton(
+                    T.BTN_INLINE_HERE,
+                    switch_inline_query_current_chat="شروع",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.BTN_INLINE_OTHER,
+                    switch_inline_query="شروع",
+                )
+            ],
             [InlineKeyboardButton(T.BTN_GROUP_HELP, callback_data="gc:group")],
             [InlineKeyboardButton(T.BTN_CHANNEL_HELP, callback_data="gc:channel")],
         ]

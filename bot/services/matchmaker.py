@@ -112,15 +112,22 @@ def is_waiting(session: Session, user: User) -> bool:
     return True
 
 
-def waiting_count(session: Session) -> int:
-    return (
-        session.query(MatchQueue)
-        .filter(
-            MatchQueue.status == STATUS_WAITING,
-            or_(MatchQueue.expires_at.is_(None), MatchQueue.expires_at >= _now()),
-        )
-        .count()
+def waiting_count(
+    session: Session,
+    *,
+    use_fake_identity: Optional[bool] = None,
+    queue_mode: Optional[str] = None,
+) -> int:
+    """Count waiters in the same match pool (not across stranger/fake/…)."""
+    q = session.query(MatchQueue).filter(
+        MatchQueue.status == STATUS_WAITING,
+        or_(MatchQueue.expires_at.is_(None), MatchQueue.expires_at >= _now()),
     )
+    if use_fake_identity is not None:
+        q = q.filter(MatchQueue.use_fake_identity.is_(use_fake_identity))
+    if queue_mode is not None:
+        q = q.filter(MatchQueue.queue_mode == queue_mode)
+    return q.count()
 
 
 def queue_position(session: Session, user: User) -> int:
@@ -136,6 +143,8 @@ def queue_position(session: Session, user: User) -> int:
         .filter(
             MatchQueue.status == STATUS_WAITING,
             MatchQueue.created_at <= me.created_at,
+            MatchQueue.use_fake_identity.is_(bool(me.use_fake_identity)),
+            MatchQueue.queue_mode == me.queue_mode,
             or_(MatchQueue.expires_at.is_(None), MatchQueue.expires_at >= _now()),
         )
         .count()
@@ -250,11 +259,18 @@ def cleanup_stale_matching(session: Session, older_than_seconds: int = 30) -> in
 
 
 def _compatible(a: MatchQueue, ua: User, b: MatchQueue, ub: User) -> bool:
+    if a.use_fake_identity != b.use_fake_identity:
+        return False
+
     if not profile_complete(ua) or not profile_complete(ub):
         return False
 
     if not ub.allow_stranger_requests or not ua.allow_stranger_requests:
         return False
+
+    # Fake-identity pool: pair anyone in the pool (filters apply to real cards only)
+    if a.use_fake_identity and b.use_fake_identity:
+        return True
 
     if a.play_anonymous and not ub.allow_anonymous_requests:
         return False
@@ -304,9 +320,6 @@ def _compatible(a: MatchQueue, ua: User, b: MatchQueue, ub: User) -> bool:
     if b.age_from is not None and (ua.age is None or ua.age < b.age_from):
         return False
     if b.age_to is not None and (ua.age is None or ua.age > b.age_to):
-        return False
-
-    if a.use_fake_identity != b.use_fake_identity:
         return False
 
     return True
@@ -503,6 +516,7 @@ def try_match(session: Session, user: User) -> Optional[MatchResult]:
                 MatchQueue.status == STATUS_WAITING,
                 MatchQueue.user_id != user.id,
                 MatchQueue.use_fake_identity == me.use_fake_identity,
+                MatchQueue.queue_mode == me.queue_mode,
                 or_(MatchQueue.expires_at.is_(None), MatchQueue.expires_at >= _now()),
             )
             .order_by(MatchQueue.created_at.asc())
@@ -571,6 +585,7 @@ def process_queue_batch(session: Session, limit: int | None = None) -> list[Matc
                     MatchQueue.status == STATUS_WAITING,
                     MatchQueue.user_id != me.user_id,
                     MatchQueue.use_fake_identity == me.use_fake_identity,
+                    MatchQueue.queue_mode == me.queue_mode,
                     or_(MatchQueue.expires_at.is_(None), MatchQueue.expires_at >= _now()),
                 )
                 .order_by(MatchQueue.created_at.asc())

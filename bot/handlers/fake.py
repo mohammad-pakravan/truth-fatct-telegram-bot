@@ -126,16 +126,23 @@ async def fake_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         if data.startswith("age_to:"):
             s["age_to"] = int(data.split(":")[1])
-            # Skip stranger "allow anon" — fake pool is separate; go to identity then enqueue
-            await query.edit_message_text(
-                T.STRANGER_ASK_IDENTITY,
-                reply_markup=kb.identity_pref(),
+            s["require_identity"] = False
+            s["play_anonymous"] = False
+            await _enqueue_and_match(
+                query,
+                context,
+                tg,
+                s,
+                use_fake=True,
+                identity_mode=st.get(tg.id).get("identity_mode", "fake"),
+                fake_id=st.get(tg.id).get("fake_identity_id"),
+                queue_mode="fake",
             )
             return
+        # legacy: ignore identity step if somehow still shown
         if data.startswith("str_id:"):
-            visible = data.endswith(":visible")
-            s["require_identity"] = visible
-            s["play_anonymous"] = False  # fake mode is its own pool
+            s["require_identity"] = False
+            s["play_anonymous"] = False
             await _enqueue_and_match(
                 query,
                 context,

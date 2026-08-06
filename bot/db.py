@@ -26,6 +26,48 @@ def init_db() -> None:
     _migrate_channel_columns()
     _migrate_fake_identity_columns()
     _migrate_sponsored_channel_province()
+    _migrate_game_session_inline_message()
+
+
+def _migrate_game_session_inline_message() -> None:
+    """Add inline_message_id to game_sessions for @bot inline starts."""
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(game_sessions)").fetchall()
+            cols = {r[1] for r in rows}
+            if cols and "inline_message_id" not in cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE game_sessions ADD COLUMN inline_message_id VARCHAR(128)"
+                )
+        return
+
+    if "postgresql" not in DATABASE_URL:
+        return
+
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'game_sessions' "
+                    "AND column_name = 'inline_message_id'"
+                )
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    text(
+                        "ALTER TABLE game_sessions "
+                        "ADD COLUMN inline_message_id VARCHAR(128)"
+                    )
+                )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_game_sessions_inline_message_id "
+                    "ON game_sessions (inline_message_id)"
+                )
+            )
+    except Exception:
+        pass
 
 
 def _migrate_sponsored_channel_province() -> None:

@@ -12,6 +12,7 @@ from bot.provinces import PROVINCES
 from bot.services import game_engine
 from bot.services import search as search_svc
 from bot.services import users as user_svc
+from bot.services.glass_msg import show_td_glass, upsert_hub
 from bot.texts import fa as T
 
 
@@ -320,34 +321,69 @@ async def _start_game_with(query, context, tg, target_user_id: int) -> None:
         game_engine.add_player(session, game, other)
         rnd = game_engine.start_two_player(session, game)
         st.clear(tg.id)
-        await query.edit_message_text(
-            f"🎮 بازی با {user_svc.public_name(other)} شروع شد!"
+        me_name = user_svc.public_name(me)
+        other_name = user_svc.public_name(other)
+        me_chooser = rnd.chooser_user_id == me.id
+        turn = T.CHOOSE_TRUTH_OR_DARE.format(
+            chooser=me_name if me_chooser else other_name,
+            target=other_name if me_chooser else me_name,
         )
-        await query.message.reply_text(
-            T.BTN_GAME_MENU_HINT,
-            reply_markup=kb.in_game_menu(is_chooser=rnd.chooser_user_id == me.id),
+        if rnd:
+            turn = f"{T.ROUND_INFO.format(n=game.round_number, max=game.max_rounds)}\n{turn}"
+        game_id = game.id
+        chooser_uid = rnd.chooser_user_id
+        me_tg, other_tg = me.telegram_id, other.telegram_id
+        me_body = f"🎮 بازی با {other_name} شروع شد!"
+        other_body = f"🎮 {me_name} تو رو به جرئت حقیقت دعوت کرد!"
+        me_hub = (
+            T.MATCH_HUB.format(match_body=me_body)
+            if me_chooser
+            else T.MATCH_START_WAITER.format(match_body=me_body, turn=turn)
         )
-        text = T.CHOOSE_TRUTH_OR_DARE.format(
-            chooser=user_svc.public_name(me),
-            target=user_svc.public_name(other),
+        other_hub = (
+            T.MATCH_START_WAITER.format(match_body=other_body, turn=turn)
+            if me_chooser
+            else T.MATCH_HUB.format(match_body=other_body)
         )
-        markup = kb.truth_dare(game.id, rnd.chooser_user_id)
-        try:
-            await context.bot.send_message(me.telegram_id, text, reply_markup=markup)
-            from bot.handlers import gameplay
 
-            await gameplay.send_in_game_menu(context, me.telegram_id, is_chooser=True)
-        except Exception:
-            pass
-        try:
-            await context.bot.send_message(
-                other.telegram_id,
-                f"🎮 {user_svc.public_name(me)} تو رو به جرئت حقیقت دعوت کرد!",
-                reply_markup=kb.in_game_menu(is_chooser=False),
+    await query.edit_message_text(me_body)
+    try:
+        mid = await upsert_hub(
+            context.bot,
+            me_tg,
+            me_hub,
+            reply_kb=kb.in_game_menu(is_chooser=me_chooser),
+            replace_keyboard=True,
+        )
+        glass_id = None
+        if me_chooser:
+            glass_id = await show_td_glass(
+                context.bot,
+                me_tg,
+                session_id=game_id,
+                chooser_id=chooser_uid,
+                turn_text=turn,
             )
-            await context.bot.send_message(
-                other.telegram_id,
-                "منتظر انتخاب جرئت/حقیقت باش…",
+        st.set_state(me_tg, game_hub_message_id=mid, game_glass_message_id=glass_id)
+    except Exception:
+        pass
+    try:
+        mid = await upsert_hub(
+            context.bot,
+            other_tg,
+            other_hub,
+            reply_kb=kb.in_game_menu(is_chooser=not me_chooser),
+            replace_keyboard=True,
+        )
+        glass_id = None
+        if not me_chooser:
+            glass_id = await show_td_glass(
+                context.bot,
+                other_tg,
+                session_id=game_id,
+                chooser_id=chooser_uid,
+                turn_text=turn,
             )
-        except Exception:
-            pass
+        st.set_state(other_tg, game_hub_message_id=mid, game_glass_message_id=glass_id)
+    except Exception:
+        pass
