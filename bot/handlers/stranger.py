@@ -182,9 +182,19 @@ async def leave_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
         await update.message.reply_text(T.LEFT_QUEUE, reply_markup=main_menu())
         return True
 
-    if text != T.BTN_LEAVE_QUEUE:
+    # Accept emoji / non-emoji variants (Telegram clients sometimes strip)
+    if text not in (T.BTN_LEAVE_QUEUE, T.LEAVE_QUEUE) and "خروج از صف" not in text:
         return False
-    await cancel_match_cmd(update, context)
+
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username)
+        ok = matchmaker.cancel(session, user)
+    st.clear(tg.id)
+    # Always give visible feedback + restore main menu
+    await update.message.reply_text(
+        T.LEFT_QUEUE if ok else T.NOT_IN_QUEUE,
+        reply_markup=main_menu(),
+    )
     return True
 
 

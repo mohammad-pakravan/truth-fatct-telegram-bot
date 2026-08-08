@@ -71,6 +71,13 @@ def format_profile(user: User, viewer_settings: Optional[User] = None) -> str:
     if show_id and user.username:
         lines.append(f"آیدی: @{user.username}")
 
+    likes = int(getattr(user, "likes_count", 0) or 0)
+    lines.append(f"❤️ لایک: {likes}")
+
+    from bot.services.presence import format_last_seen
+
+    lines.append(format_last_seen(getattr(user, "last_active_at", None)))
+
     return "\n".join(lines)
 
 

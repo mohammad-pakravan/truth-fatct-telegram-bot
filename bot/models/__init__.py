@@ -6,10 +6,15 @@
     GameSession,
     InviteLink,
     MatchQueue,
+    PlayInvite,
     Round,
     SponsoredChannel,
     User,
+    UserContact,
     UserFakeAssignment,
+    UserLike,
+    UserReport,
+    UserRestriction,
     Vote,
 )
 
@@ -26,4 +31,9 @@ __all__ = [
     "BotAdmin",
     "SponsoredChannel",
     "AnalyticsEvent",
+    "UserReport",
+    "UserRestriction",
+    "UserLike",
+    "UserContact",
+    "PlayInvite",
 ]

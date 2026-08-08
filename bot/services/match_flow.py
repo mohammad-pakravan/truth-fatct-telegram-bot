@@ -232,6 +232,28 @@ async def enqueue_and_maybe_match(
 
                     await gameplay.resume_active_game_keyboard(context, telegram_user.id)
                     return False
+                if str(exc) == "restricted":
+                    from bot.services import moderation as mod_svc
+
+                    msg = mod_svc.restriction_message(session, user) or T.RESTRICTED_PERMANENT.format(
+                        reason="—"
+                    )
+                    if hub_id:
+                        try:
+                            await upsert_hub(
+                                context.bot,
+                                tg_id,
+                                msg,
+                                message_id=hub_id,
+                                reply_kb=main_menu(),
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        await context.bot.send_message(
+                            telegram_user.id, msg, reply_markup=main_menu()
+                        )
+                    return False
                 if str(exc) == "match_in_progress":
                     await upsert_hub(
                         context.bot,

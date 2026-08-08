@@ -36,6 +36,12 @@ async def friends_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+        from bot.services import moderation as mod_svc
+
+        blocked = mod_svc.restriction_message(session, user)
+        if blocked:
+            await query.edit_message_text(blocked)
+            return
         inv = invite_svc.create_invite(session, user, display_mode=mode)
         link = invite_svc.invite_link_url(inv.token)
         label = invite_svc.inviter_label(inv)
@@ -84,6 +90,12 @@ async def accept_invite_and_notify(
     try:
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+            from bot.services import moderation as mod_svc
+
+            blocked = mod_svc.restriction_message(session, user)
+            if blocked:
+                await update.message.reply_text(blocked, reply_markup=main_menu())
+                return True
             accepted = invite_svc.accept_invite(session, user, token)
             rnd = accepted.round
             label = accepted.label
@@ -109,6 +121,7 @@ async def accept_invite_and_notify(
             "invalid": T.INVITE_INVALID,
             "self": T.INVITE_SELF,
             "busy": T.INVITE_BUSY,
+            "restricted": T.RESTRICTED_PERMANENT.format(reason="یکی از طرفین محدود است"),
         }.get(code, T.INVITE_INVALID)
         await update.message.reply_text(msg, reply_markup=main_menu())
         return True

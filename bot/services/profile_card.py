@@ -60,9 +60,17 @@ def format_card_caption(user: User, *, intro: Optional[str] = None) -> str:
             f"🗺 استان: {user.province or '—'}",
             f"🏙 شهر: {user.city or '—'}",
             f"🎂 سن: {user.age or '—'}",
+            f"❤️ لایک: {int(getattr(user, 'likes_count', 0) or 0)}",
+            _last_seen_line(user),
         ]
     )
     return "\n".join(lines)
+
+
+def _last_seen_line(user: User) -> str:
+    from bot.services.presence import format_last_seen
+
+    return format_last_seen(getattr(user, "last_active_at", None))
 
 
 async def send_profile_card(

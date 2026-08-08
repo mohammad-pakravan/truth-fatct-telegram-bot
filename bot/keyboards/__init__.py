@@ -6,13 +6,22 @@ from bot.texts import fa as T
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(T.BTN_STRANGER)],
-            [KeyboardButton(T.BTN_FAKE)],
-            [KeyboardButton(T.BTN_NEARBY), KeyboardButton(T.BTN_ANON)],
-            [KeyboardButton(T.BTN_ADVANCED)],
-            [KeyboardButton(T.BTN_HUB_PROFILE)],
-            [KeyboardButton(T.BTN_HUB_FRIENDS)],
-            [KeyboardButton(T.BTN_HELP), KeyboardButton(T.BTN_CONTACT)],
+            [KeyboardButton(T.BTN_HUB_PLAY)],
+            [KeyboardButton(T.BTN_HUB_FRIENDS), KeyboardButton(T.BTN_ADVANCED)],
+            [KeyboardButton(T.BTN_HUB_PROFILE), KeyboardButton(T.BTN_HELP)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def hub_play_menu() -> ReplyKeyboardMarkup:
+    """Modes under «شروع بازی»."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(T.BTN_PLAY_NORMAL), KeyboardButton(T.BTN_NEARBY)],
+            [KeyboardButton(T.BTN_ANON), KeyboardButton(T.BTN_FAKE)],
+            [KeyboardButton(T.BTN_PLAY_FRIEND_LINK), KeyboardButton(T.BTN_GROUP_CHANNEL)],
+            [KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
     )
@@ -21,14 +30,87 @@ def main_menu() -> ReplyKeyboardMarkup:
 def in_game_menu(
     is_chooser: bool = False, *, awaiting_answer: bool = False
 ) -> ReplyKeyboardMarkup:
-    """Compact reply keyboard (profile/end). Truth/dare use glass buttons."""
-    first_row = [KeyboardButton(T.BTN_GAME_PROFILE), KeyboardButton(T.BTN_GAME_END)]
+    """In-game reply keyboard: profile / end / private chat (+ skip)."""
+    rows = [
+        [KeyboardButton(T.BTN_GAME_PROFILE), KeyboardButton(T.BTN_GAME_END)],
+        [KeyboardButton(T.BTN_PRIVATE_CHAT)],
+    ]
     if awaiting_answer:
-        return ReplyKeyboardMarkup(
-            [first_row, [KeyboardButton(T.BTN_SKIP)]],
-            resize_keyboard=True,
+        rows.append([KeyboardButton(T.BTN_SKIP)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+def private_chat_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(T.BTN_PRIVATE_CHAT_EXIT)],
+            [KeyboardButton(T.BTN_GAME_PROFILE), KeyboardButton(T.BTN_GAME_END)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def post_game_actions_keyboard(game_id: int, target_user_id: int) -> InlineKeyboardMarkup:
+    """Glass actions after a match ends: like / contact / report."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    T.BTN_LIKE_USER, callback_data=f"pgact:like:{game_id}:{target_user_id}"
+                ),
+                InlineKeyboardButton(
+                    T.BTN_ADD_CONTACT,
+                    callback_data=f"pgact:contact:{game_id}:{target_user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    T.BTN_REPORT_USER,
+                    callback_data=f"pgact:report:{game_id}:{target_user_id}",
+                )
+            ],
+        ]
+    )
+
+
+def contacts_list_keyboard(rows: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    """rows: (contact_user_id, label)."""
+    buttons = []
+    for cid, label in rows:
+        buttons.append(
+            [
+                InlineKeyboardButton(label[:40], callback_data=f"contact:view:{cid}"),
+                InlineKeyboardButton("🗑", callback_data=f"contact:del:{cid}"),
+            ]
         )
-    return ReplyKeyboardMarkup([first_row], resize_keyboard=True)
+    buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="contact:back")])
+    return InlineKeyboardMarkup(buttons)
+
+def report_reason_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    T.REPORT_REASON_ABUSE, callback_data=f"ureport:abuse:{game_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.REPORT_REASON_SEXUAL, callback_data=f"ureport:sexual:{game_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.REPORT_REASON_SPAM, callback_data=f"ureport:spam:{game_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.REPORT_REASON_OTHER, callback_data=f"ureport:other:{game_id}"
+                )
+            ],
+        ]
+    )
 
 
 def back_menu() -> ReplyKeyboardMarkup:
@@ -39,10 +121,8 @@ def hub_profile_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(T.BTN_SHOW_PROFILE), KeyboardButton(T.BTN_PROFILE)],
-            [KeyboardButton(T.BTN_RUN_WIZARD)],
-            [KeyboardButton(T.BTN_HISTORY), KeyboardButton(T.BTN_GAME_SETTINGS)],
-            [KeyboardButton(T.BTN_FAKE)],
-            [KeyboardButton(T.BTN_BACK)],
+            [KeyboardButton(T.BTN_GAME_SETTINGS), KeyboardButton(T.BTN_HISTORY)],
+            [KeyboardButton(T.BTN_RUN_WIZARD), KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
     )
@@ -51,11 +131,41 @@ def hub_profile_menu() -> ReplyKeyboardMarkup:
 def hub_friends_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(T.BTN_FRIENDS)],
-            [KeyboardButton(T.BTN_GROUP_CHANNEL)],
+            [KeyboardButton(T.BTN_FRIENDS), KeyboardButton(T.BTN_GROUP_CHANNEL)],
             [KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
+    )
+
+
+def hub_friends_inline() -> InlineKeyboardMarkup:
+    """Friends hub: invite / group + inline lists — one glass panel."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(T.BTN_FRIENDS, callback_data="hubf:link"),
+                InlineKeyboardButton(T.BTN_GROUP_CHANNEL, callback_data="hubf:group"),
+            ],
+            [
+                InlineKeyboardButton(
+                    T.BTN_INLINE_FIND,
+                    switch_inline_query_current_chat="پسر تهران",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.BTN_INLINE_LIKES,
+                    switch_inline_query_current_chat="likes",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    T.BTN_INLINE_CONTACTS,
+                    switch_inline_query_current_chat="contacts",
+                )
+            ],
+            [InlineKeyboardButton(T.BTN_BACK, callback_data="hubf:back")],
+        ]
     )
 
 
@@ -537,9 +647,112 @@ def admin_home_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(T.ADMIN_BTN_REPORTS, callback_data="admin:reports")],
+            [InlineKeyboardButton(T.ADMIN_BTN_USER_SEARCH, callback_data="admin:usearch")],
+            [InlineKeyboardButton(T.ADMIN_BTN_MODERATION, callback_data="admin:mod")],
+            [InlineKeyboardButton(T.ADMIN_BTN_BROADCAST, callback_data="admin:broadcast")],
             [InlineKeyboardButton(T.ADMIN_BTN_CHANNELS, callback_data="admin:channels")],
             [InlineKeyboardButton(T.ADMIN_BTN_ADMINS, callback_data="admin:admins")],
             [InlineKeyboardButton(T.ADMIN_BTN_REFRESH, callback_data="admin:home")],
+        ]
+    )
+
+
+def admin_user_search_results_keyboard(user_ids: list[int]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(f"👤 #{uid}", callback_data=f"admin:usearch:u:{uid}")]
+        for uid in user_ids[:20]
+    ]
+    rows.append([InlineKeyboardButton("🔎 جستجوی جدید", callback_data="admin:usearch")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_user_detail_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_1H, callback_data=f"admin:usearch:ban:{user_id}:1h"),
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_24H, callback_data=f"admin:usearch:ban:{user_id}:24h"),
+            ],
+            [
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_7D, callback_data=f"admin:usearch:ban:{user_id}:7d"),
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_PERM, callback_data=f"admin:usearch:ban:{user_id}:perm"),
+            ],
+            [InlineKeyboardButton("🔎 جستجوی جدید", callback_data="admin:usearch")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")],
+        ]
+    )
+
+
+def admin_mod_home_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(T.ADMIN_BTN_MOD_OPEN, callback_data="admin:mod:open")],
+            [InlineKeyboardButton(T.ADMIN_BTN_MOD_BANS, callback_data="admin:mod:bans")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")],
+        ]
+    )
+
+
+def admin_mod_reports_keyboard(reports) -> InlineKeyboardMarkup:
+    rows = []
+    for r in reports:
+        label = f"#{r.id} · {r.reason_code}"
+        rows.append([InlineKeyboardButton(label, callback_data=f"admin:mod:r:{r.id}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:mod")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_mod_bans_keyboard(rows_data: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    """rows_data: (restriction_id, button_label)."""
+    rows = []
+    for rid, label in rows_data:
+        rows.append(
+            [
+                InlineKeyboardButton(label[:60], callback_data=f"admin:mod:b:{rid}"),
+                InlineKeyboardButton(T.ADMIN_BTN_MOD_LIFT, callback_data=f"admin:mod:lift:{rid}"),
+            ]
+        )
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:mod")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_mod_report_actions_keyboard(report_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_1H, callback_data=f"admin:mod:ban:{report_id}:1h"),
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_6H, callback_data=f"admin:mod:ban:{report_id}:6h"),
+            ],
+            [
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_24H, callback_data=f"admin:mod:ban:{report_id}:24h"),
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_7D, callback_data=f"admin:mod:ban:{report_id}:7d"),
+            ],
+            [
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_30D, callback_data=f"admin:mod:ban:{report_id}:30d"),
+                InlineKeyboardButton(T.ADMIN_BTN_BAN_PERM, callback_data=f"admin:mod:ban:{report_id}:perm"),
+            ],
+            [InlineKeyboardButton(T.ADMIN_BTN_MOD_DISMISS, callback_data=f"admin:mod:dismiss:{report_id}")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:mod:open")],
+        ]
+    )
+
+
+def admin_broadcast_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(T.ADMIN_BTN_BC_ALL, callback_data="admin:bc:all")],
+            [InlineKeyboardButton(T.ADMIN_BTN_BC_ONE, callback_data="admin:bc:one")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")],
+        ]
+    )
+
+
+def admin_broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(T.ADMIN_BTN_BC_GO, callback_data="admin:bc:go")],
+            [InlineKeyboardButton(T.ADMIN_BTN_BC_ABORT, callback_data="admin:broadcast")],
         ]
     )
 
@@ -617,6 +830,31 @@ def admin_admins_keyboard(admin_rows: list[tuple[int, str]]) -> InlineKeyboardMa
             )
     rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")])
     return InlineKeyboardMarkup(rows)
+
+
+def play_invite_keyboard(invite_id: int, *, for_target: bool) -> InlineKeyboardMarkup:
+    if for_target:
+        return InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        T.INVITE_ACCEPT, callback_data=f"invite:accept:{invite_id}"
+                    ),
+                    InlineKeyboardButton(
+                        T.INVITE_REJECT, callback_data=f"invite:reject:{invite_id}"
+                    ),
+                ]
+            ]
+        )
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    T.INVITE_CANCEL, callback_data=f"invite:cancel:{invite_id}"
+                )
+            ]
+        ]
+    )
 
 
 def queue_menu() -> ReplyKeyboardMarkup:

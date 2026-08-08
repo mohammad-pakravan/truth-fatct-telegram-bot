@@ -56,6 +56,9 @@ ADMIN_IDS = {
     if x.strip().lstrip("-").isdigit()
 }
 
+# Admin broadcast: stay under Telegram bulk limit (~30 msg/s to different chats)
+BROADCAST_RATE_PER_SECOND = float(os.getenv("BROADCAST_RATE_PER_SECOND", "20"))
+
 
 def require_token() -> str:
     if not BOT_TOKEN:

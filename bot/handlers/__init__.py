@@ -9,6 +9,7 @@
     history,
     membership,
     menu,
+    play_invite,
     profile,
     start,
     stranger,
@@ -30,4 +31,5 @@ __all__ = [
     "wizard",
     "admin",
     "membership",
+    "play_invite",
 ]

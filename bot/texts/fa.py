@@ -1,21 +1,26 @@
 ﻿MAIN_MENU_TITLE = "🎯 جرئت حقیقت\nیکی از گزینه‌ها رو انتخاب کن:"
 
-# Main menu (layout like reference: 1 / 2 / 1 / 1 / 2)
-BTN_ADVANCED = "🎭 چت و بازی پیشرفته"
-BTN_NEARBY = "📍 افراد نزدیک"
-BTN_ANON = "🕶 بازی با ناشناس"
-BTN_HUB_PROFILE = "🙂 شخصی‌سازی مشخصات"
-BTN_HUB_FRIENDS = "🙂 بازی با دوستان"
-BTN_HELP = "📖 راهنما"
-BTN_CONTACT = "💬 ارتباط با ما"
+# Main menu (compact hubs)
+BTN_HUB_PLAY = "🟠 شروع بازی"
+BTN_ADVANCED = "🔎 پیدا کردن حریف"
+BTN_HUB_PROFILE = "🧡 پروفایل"
+BTN_HUB_FRIENDS = "🟡 دوستان"
+BTN_HELP = "📘 راهنما"
+BTN_CONTACT = "💬 پشتیبانی"  # legacy alias; folded into help
 
-# Legacy / submenu labels
-BTN_FRIENDS = "🔗 لینک شخصی"
-BTN_GROUP_CHANNEL = "🙂 بازی در کانال / گروه"
+# Play hub modes
+BTN_PLAY_NORMAL = "🟢 عادی"
+BTN_NEARBY = "📍 نزدیک من"
+BTN_ANON = "🟣 ناشناس"
+BTN_FAKE = "🎭 هویت رندوم"
+BTN_PLAY_FRIEND_LINK = "🔗 لینک دوست"
+BTN_GROUP_CHANNEL = "📣 گروه / کانال"
+
+# Legacy aliases (old keyboards / deep paths)
 BTN_STRANGER = "🙂 بازی با غریبه"
-BTN_PROFILE = "✏️ ویرایش مشخصات"
-BTN_HISTORY = "📜 تاریخچه بازی‌های اخیر"
-BTN_FAKE = "🙂 بازی با هویت رندوم"
+BTN_FRIENDS = "🔗 لینک شخصی"
+BTN_PROFILE = "✏️ ویرایش"
+BTN_HISTORY = "📜 تاریخچه"
 BTN_BACK = "🔙 بازگشت"
 BTN_CANCEL = "❌ لغو"
 BTN_SKIP = "⏭ رد کردن"
@@ -61,7 +66,7 @@ WIZARD_ASK_AGE = (
 )
 AGE_TOO_YOUNG = (
     "برای بازی باید حداقل ۱۶ سال داشته باشی.\n"
-    "از «پروفایل و لیست‌ها» سنت رو درست کن، بعد دوباره امتحان کن."
+    "از «پروفایل من» سنت رو درست کن، بعد دوباره امتحان کن."
 )
 AGE_INVALID = "فقط یه عدد بین ۱۶ تا ۹۹ بفرست 🔢"
 WIZARD_ASK_PHOTO = (
@@ -76,7 +81,7 @@ WIZARD_DONE = (
 WIZARD_CANCELLED = (
     "باشه، فعلاً رد شدیم 😊\n"
     "هر وقت خواستی بازی کنی، دوباره ازت می‌پرسیم.\n"
-    "یا از «پروفایل و لیست‌ها» خودت تکمیلش کن."
+    "یا از «پروفایل من» خودت تکمیلش کن."
 )
 WIZARD_SOFT_GATE = (
     "برای «{feature}» لازمه یه پروفایل کوچیک داشته باشی.\n"
@@ -93,9 +98,9 @@ BTN_EDIT_PROVINCE = "استان"
 BTN_EDIT_GENDER = "جنسیت"
 BTN_EDIT_AGE = "سن"
 BTN_EDIT_PHOTO = "📷 عکس پروفایل"
-BTN_RUN_WIZARD = "🪄 ویزارد تکمیل مشخصات"
-BTN_GAME_SETTINGS = "⚙️ تنظیمات بازی"
-BTN_SHOW_PROFILE = "👁 مشاهده پروفایل"
+BTN_RUN_WIZARD = "✨ تکمیل مشخصات"
+BTN_GAME_SETTINGS = "⚙️ تنظیمات"
+BTN_SHOW_PROFILE = "👁 مشاهده"
 
 ASK_NAME = "نام نمایشی‌ات رو بفرست:"
 ASK_CITY = "شهرت رو بفرست:"
@@ -106,17 +111,18 @@ ASK_PHOTO = "عکس پروفایل جدید رو بفرست، یا رد کن:"
 
 
 HELP_TEXT = (
-    "📖 راهنمای ربات جرئت حقیقت\n\n"
-    "🎭 چت و بازی پیشرفته\n"
-    "جستجوی فیلتردار پارتنر (جنسیت، استان، سن، آخرین حضور) و شروع بازی.\n\n"
-    "📍 افراد نزدیک\n"
-    "لوکیشنت رو بفرست و تا شعاع ۱ تا ۱۰۰ کیلومتر مچ شو.\n\n"
-    "🕶 بازی با ناشناس\n"
-    "اتصال سریع و تصادفی به یک غریبه — بدون فیلتر.\n\n"
-    "👤 پروفایل و لیست‌ها\n"
-    "ویرایش مشخصات، تنظیمات حریم خصوصی و تاریخچه.\n\n"
-    "🤝 بازی با دوستان\n"
-    "لینک شخصی، یا بازی داخل گروه / کانال.\n\n"
+    "📘 راهنمای ربات جرئت حقیقت\n\n"
+    "🟠 شروع بازی\n"
+    "عادی، ناشناس، هویت رندوم، نزدیک من، لینک دوست، گروه/کانال.\n\n"
+    "🔎 پیدا کردن حریف\n"
+    "فیلتر جنسیت/استان/سن و دعوت به بازی.\n\n"
+    "🟡 دوستان\n"
+    "لینک دعوت، مخاطبین، لایک‌شده‌ها، گروه/کانال.\n\n"
+    "🧡 پروفایل\n"
+    "مشاهده، ویرایش، تنظیمات حریم خصوصی و تاریخچه.\n\n"
+    "💬 پشتیبانی\n"
+    "پیشنهاد، گزارش باگ یا حرف زدن با ما:\n"
+    "{contact}\n\n"
     "دستورهای مفید:\n"
     "/group_game — شروع بازی گروهی (داخل گروه)\n"
     "/channel_game — بازی کانال\n"
@@ -124,16 +130,23 @@ HELP_TEXT = (
 )
 
 CONTACT_TEXT = (
-    "💬 ارتباط با ما\n\n"
-    "برای پیشنهاد، گزارش باگ یا پشتیبانی پیام بده:\n"
+    "💬 پشتیبانی\n\n"
+    "برای پیشنهاد، گزارش باگ یا حرف زدن با ما پیام بده:\n"
     "{contact}"
 )
 
-HUB_PROFILE_TEXT = (
-    "🙂 شخصی‌سازی مشخصات\n\n"
-    "پروفایل، تنظیمات بازی، لقب و تاریخچه اینجاست."
+HUB_PLAY_TEXT = (
+    "🟠 شروع بازی\n\n"
+    "حالت مورد نظرت رو انتخاب کن:"
 )
-HUB_FRIENDS_TEXT = "🙂 بازی با دوستان\nنوع بازی رو انتخاب کن:"
+HUB_PROFILE_TEXT = (
+    "🧡 پروفایل\n\n"
+    "مشاهده، ویرایش، تنظیمات و تاریخچه:"
+)
+HUB_FRIENDS_TEXT = (
+    "🟡 دوستان\n\n"
+    "لینک دعوت، گروه/کانال، یا لیست کشویی مخاطبین و لایک‌شده‌ها:"
+)
 
 GENDER_MALE = "پسر"
 GENDER_FEMALE = "دختر"
@@ -235,6 +248,30 @@ INLINE_TITLE_HELP_CHANNEL = "📖 راهنمای بازی کانالی"
 INLINE_DESC_HELP_CHANNEL = "رأی دکمه‌ای یا کامنت آزاد"
 INLINE_PLACEHOLDER_GROUP = "⏳ در حال باز کردن ثبت‌نام بازی گروهی…"
 INLINE_PLACEHOLDER_CHANNEL = "⏳ در حال باز کردن بازی کانالی…"
+INLINE_HINT_LIKES_TITLE = "❤️ لایک‌شده‌های من"
+INLINE_HINT_LIKES_DESC = "بنویس: likes   یا   لایک"
+INLINE_HINT_LIKES_MSG = "برای دیدن لایک‌شده‌ها توی این چت بنویس:\n@bot لایک\nیا از منوی دوستان دکمهٔ اینلاین رو بزن."
+INLINE_HINT_CONTACTS_TITLE = "📒 مخاطبین من"
+INLINE_HINT_CONTACTS_DESC = "بنویس: contacts   یا   مخاطب"
+INLINE_HINT_CONTACTS_MSG = "برای دیدن مخاطبین توی این چت بنویس:\n@bot مخاطب\nیا از منوی دوستان دکمهٔ اینلاین رو بزن."
+INLINE_FIND_EMPTY_TITLE = "کسی با این فیلتر پیدا نشد"
+INLINE_FIND_EMPTY = "جنسیت یا استان رو عوض کن. مثال: پسر تهران"
+INLINE_FIND_HINT_TITLE = "🔎 پیدا کردن کاربر"
+INLINE_FIND_HINT_DESC = "مثال: پسر تهران   |   دختر اصفهان"
+INLINE_FIND_HINT_MSG = (
+    "برای جستجوی اینلاین بنویس:\n"
+    "پسر تهران\n"
+    "دختر اصفهان\n"
+    "یا: جستجو پسر\n\n"
+    "🟢 آنلاین · 🔴 آفلاین"
+)
+BTN_INLINE_FIND = "🔎 پیدا کردن (جنسیت/استان)"
+INLINE_LIKES_EMPTY_TITLE = "هنوز کسی رو لایک نکردی"
+INLINE_LIKES_EMPTY = "بعد از تموم شدن بازی می‌تونی با دکمهٔ ❤️ لایک کنی."
+INLINE_CONTACTS_EMPTY_TITLE = "مخاطبی نداری"
+INLINE_CONTACTS_EMPTY = "بعد از بازی با دکمهٔ 👤 افزودن مخاطب، کسی رو ذخیره کن."
+BTN_INLINE_LIKES = "❤️ لایک‌شده‌ها (لیست)"
+BTN_INLINE_CONTACTS = "📒 مخاطبین (لیست)"
 
 JOIN_GAME = "من بازی می‌کنم"
 START_GROUP_GAME = "شروع بازی"
@@ -263,26 +300,56 @@ TURN_ACTION = (
 )
 BTN_TRUTH = "حقیقت"
 BTN_DARE = "جرئت"
-YOUR_PROMPT = "نوبت توئه ({kind}):\n\n{prompt}\n\nجوابت رو بنویس یا از کیبورد «رد کردن» رو بزن."
+YOUR_PROMPT = (
+    "نوبت توئه ({kind}):\n\n"
+    "{prompt}\n\n"
+    "جوابت رو با متن، عکس، ویس، ویدیو یا ویدیوی دایره‌ای بفرست — یا «رد کردن» رو بزن.\n"
+    "مدیا با محافظت محتوا برای حریف می‌ره."
+)
+YOUR_PROMPT_MEDIA = (
+    "نوبت توئه ({kind}):\n\n"
+    "سؤال/چالش رو ببین 👇\n\n"
+    "جوابت رو با متن، عکس، ویس، ویدیو یا ویدیوی دایره‌ای بفرست — یا «رد کردن» رو بزن."
+)
 ASK_CUSTOM_PROMPT = (
     "انتخاب شد: {kind} ✅\n\n"
-    "حالا سؤال‌ت رو بنویس تا برای حریف بفرستیم:"
+    "سؤالت رو بنویس، یا عکس / ویس / ویدیو / ویدیوی دایره‌ای بفرست:"
 )
 PROMPT_SENT = "سؤال فرستاده شد ✅\nمنتظر جواب حریف باش…"
 ANSWER_RECEIVED = "ثبت شد ✅"
+MEDIA_ANSWER_LABEL = {
+    "photo": "📷 عکس",
+    "voice": "🎤 ویس",
+    "video": "🎥 ویدیو",
+    "video_note": "🎬 ویدیوی دایره‌ای",
+}
 GAME_OVER = "بازی تموم شد!\n{summary}"
 ROUND_INFO = "راند {n}/{max}"
 BTN_GAME_PROFILE = "👁 دیدن پروفایل"
 BTN_GAME_END = "⛔ پایان بازی"
+BTN_PRIVATE_CHAT = "🔒 چت خصوصی"
+BTN_PRIVATE_CHAT_EXIT = "🎮 برگشت به بازی"
 BTN_GAME_WAIT = "⏳ منتظر انتخاب طرف مقابل باش"
 BTN_GAME_MENU_HINT = "منوی داخل بازی آماده‌ست 👇"
+PRIVATE_CHAT_ON = (
+    "🔒 چت خصوصی فعال شد.\n\n"
+    "پیام‌هات با محافظت محتوا می‌رن "
+    "(ذخیره، فوروارد و اسکرین‌شات در کلاینت‌های رسمی تلگرام محدود می‌شه).\n"
+    "برای برگشت، «برگشت به بازی» رو بزن."
+)
+PRIVATE_CHAT_PEER_ON = (
+    "🔒 حریف چت خصوصی رو باز کرد.\n"
+    "از کیبورد «چت خصوصی» می‌تونی وارد شی. پیام‌ها محافظت‌شده‌ان."
+)
+PRIVATE_CHAT_OFF = "🎮 برگشتی به بازی."
+PRIVATE_CHAT_NEED_GAME = "اول باید توی یه بازی فعال باشی."
 GAME_ENDED_BY_USER = "بازی با درخواست یکی از بازیکن‌ها تموم شد."
 ALREADY_IN_GAME = (
     "الان توی یه بازی فعال هستی 🎮\n"
     "از کیبورد پایین می‌تونی پروفایل ببینی یا با «پایان بازی» خارج شی."
 )
 
-STRANGER_INTRO = "🙂 بازی با غریبه\n\nاول فیلترهات رو مشخص می‌کنیم."
+STRANGER_INTRO = "🟢 بازی عادی\n\nاول فیلترهات رو مشخص می‌کنیم."
 STRANGER_ASK_CITY = (
     "شهرت توی پروفایل: {city}\n\n"
     "می‌خوای فقط با همشهری‌هات بازی کنی، یا هرجا باشه اوکیه؟"
@@ -319,6 +386,30 @@ NEARBY_ASK_RADIUS = (
 NEARBY_SEARCHING = "📍 در حال جستجو تا شعاع {km} کیلومتر…"
 BTN_SHARE_LOCATION = "📍 ارسال موقعیت"
 BTN_LEAVE_QUEUE = "❌ خروج از صف"
+INVITE_SENT = (
+    "📨 درخواست بازی برای «{name}» ارسال شد.\n\n"
+    "تا ۲ دقیقه فرصت داره قبول یا رد کنه.\n"
+    "اگه جواب نده، درخواست خودکار لغو می‌شه."
+)
+INVITE_RECEIVED = (
+    "🎮 «{name}» ازت دعوت کرده جرئت/حقیقت بازی کنید.\n\n"
+    "تا ۲ دقیقه فرصت داری قبول یا رد کنی."
+)
+INVITE_ACCEPT = "✅ قبول"
+INVITE_REJECT = "❌ رد"
+INVITE_CANCEL = "🗑 لغو درخواست"
+INVITE_ACCEPTED_FROM = "✅ «{name}» دعوتت رو قبول کرد — بازی شروع شد!"
+INVITE_ACCEPTED_TO = "✅ دعوت رو قبول کردی — بازی شروع شد!"
+INVITE_REJECTED_FROM = "«{name}» دعوت بازی رو رد کرد."
+INVITE_REJECTED_TO = "دعوت بازی رو رد کردی."
+INVITE_EXPIRED_FROM = "⏳ «{name}» تا ۲ دقیقه جواب نداد — درخواست لغو شد."
+INVITE_EXPIRED_TO = "⏳ زمان پاسخ به دعوت تموم شد — درخواست لغو شد."
+INVITE_CANCELLED_FROM = "درخواست بازیت لغو شد."
+INVITE_CANCELLED_TO = "دعوت‌کننده درخواست بازی رو لغو کرد."
+INVITE_BUSY = "الان نمی‌شه دعوت کرد (یکی از طرفین مشغوله یا درخواست باز دارید)."
+INVITE_GONE = "این درخواست دیگه معتبر نیست."
+INVITE_IN_GAME = "🎮 در حال بازی"
+BTN_ADV_INLINE_LIST = "📋 لیست کشویی (اینلاین)"
 WAITING_MATCH = (
     "در صف مچ هستی… ⏳\n"
     "حالت صف: {mode}\n"
@@ -451,7 +542,11 @@ ADV_NO_RESULTS = (
     "فعلاً کسی با این فیلتر پیدا نشد 🌙\n"
     "می‌تونی فیلتر رو عوض کنی یا تو صف بمونی تا کسی آنلاین بشه."
 )
-ADV_RESULTS_HEADER = "🎯 {n} نفر پیدا شد — یکی رو برای بازی انتخاب کن:"
+ADV_RESULTS_HEADER = (
+    "🎯 {n} نفر پیدا شد — یکی رو دعوت کن (باید قبول کنه):\n"
+    "🟢 آنلاین · 🔴 آفلاین · 🎮 در حال بازی\n"
+    "از «لیست کشویی» هم می‌تونی اینلاین انتخاب کنی:"
+)
 BTN_PLAY_WITH = "🎮 بازی"
 BTN_NEXT_PAGE = "⏭ بعدی"
 BTN_PREV_PAGE = "⏮ قبلی"
@@ -561,14 +656,57 @@ ADMIN_DENIED = "دسترسی ادمین نداری."
 ADMIN_HOME = (
     "🛠 پنل ادمین\n\n"
     "• گزارش‌ها و آمار\n"
+    "• جستجوی کاربر\n"
+    "• گزارش کاربران و محدودیت\n"
+    "• ارسال پیام به کاربران\n"
     "• کانال‌های اسپانسری (هر کانال برای یک استان)\n"
     "• مدیریت ادمین‌ها\n\n"
     "ربات باید ادمین کانال/گروه اسپانسری باشه."
 )
 ADMIN_BTN_REPORTS = "📊 گزارش‌ها"
+ADMIN_BTN_BROADCAST = "📣 ارسال پیام"
 ADMIN_BTN_CHANNELS = "📢 کانال‌های اسپانسری"
 ADMIN_BTN_ADMINS = "👤 ادمین‌ها"
 ADMIN_BTN_REFRESH = "🔄 بروزرسانی"
+ADMIN_BC_MENU = (
+    "📣 ارسال پیام\n\n"
+    "به همه کاربران بفرستی یا فقط به یک نفر؟"
+)
+ADMIN_BTN_BC_ALL = "👥 همه کاربران"
+ADMIN_BTN_BC_ONE = "👤 یک کاربر"
+ADMIN_BC_ASK_TARGET = (
+    "آیدی عددی تلگرام کاربر رو بفرست (فقط عدد).\n"
+    "مثال: 123456789"
+)
+ADMIN_BC_BAD_TARGET = "آیدی معتبر نیست. فقط عدد بفرست."
+ADMIN_BC_USER_NOT_FOUND = "این کاربر تو دیتابیس ربات پیدا نشد."
+ADMIN_BC_ASK_MSG = (
+    "پیام رو بفرست (متن، عکس، ویس، ویدیو، …).\n"
+    "همین پیام عیناً برای مخاطب(ها) کپی می‌شه."
+)
+ADMIN_BC_ASK_MSG_ONE = (
+    "پیام رو برای کاربر `{tid}` بفرست (متن یا مدیا).\n"
+    "همین پیام عیناً براش کپی می‌شه."
+)
+ADMIN_BC_CONFIRM = (
+    "آماده ارسال به {n} کاربر.\n\n"
+    "با نرخ حدود {rate} پیام در ثانیه ارسال می‌شه تا به محدودیت تلگرام نخوره.\n"
+    "تأیید می‌کنی؟"
+)
+ADMIN_BTN_BC_GO = "✅ شروع ارسال"
+ADMIN_BTN_BC_ABORT = "❌ انصراف"
+ADMIN_BC_STARTED = "ارسال شروع شد… پیشرفت رو همین‌جا می‌بینی."
+ADMIN_BC_PROGRESS = "پیشرفت: {done}/{total}\n✅ {ok}   ❌ {bad}"
+ADMIN_BC_DONE = (
+    "ارسال تموم شد.\n\n"
+    "کل: {total}\n"
+    "✅ موفق: {ok}\n"
+    "🚫 بلاک/غیرفعال: {blocked}\n"
+    "❌ خطا: {fail}"
+)
+ADMIN_BC_BUSY = "یک ارسال دیگه هنوز در جریانه. صبر کن تموم بشه."
+ADMIN_BC_EMPTY = "هیچ کاربری برای ارسال پیدا نشد."
+ADMIN_BC_NO_PENDING = "پیامی برای تأیید ثبت نشده. دوباره از منو شروع کن."
 ADMIN_REPORTS_HOME = (
     "📊 مرکز گزارش‌ها\n\n"
     "بازه زمانی رو انتخاب کن، یا یکی از گزارش‌های زیر رو باز کن:"
@@ -613,3 +751,82 @@ ADMIN_ADMIN_NOT_FOUND = "این ادمین تو لیست دیتابیس نبود
 ADMIN_ENV_TAG = "(از .env)"
 ADMIN_DB_TAG = "(دیتابیس)"
 ADMIN_CANCELLED = "لغو شد."
+
+# --- User reports / restrictions ---
+BTN_REPORT_USER = "🚩 گزارش"
+BTN_LIKE_USER = "❤️ لایک"
+BTN_ADD_CONTACT = "👤 افزودن مخاطب"
+BTN_CONTACTS = "📒 مخاطبین"
+LIKE_OK = "لایک شد ✅ (جمع لایک‌ها: {n})"
+LIKE_REMOVED = "لایک برداشته شد (جمع لایک‌ها: {n})"
+LIKE_SELF = "نمی‌تونی خودت رو لایک کنی."
+CONTACT_ADDED = "به مخاطبین اضافه شد ✅"
+CONTACT_EXISTS = "قبلاً توی مخاطبینت بود."
+CONTACT_SELF = "نمی‌تونی خودت رو اضافه کنی."
+CONTACT_REMOVED = "از مخاطبین حذف شد."
+CONTACTS_EMPTY = "هنوز مخاطبی نداری.\nبعد از تموم شدن بازی می‌تونی با دکمه شیشه‌ای اضافه کنی."
+CONTACTS_HEADER = "📒 مخاطبینت ({n}):"
+POST_GAME_ACTIONS = "اگه دوست داشتی می‌تونی لایک کنی، به مخاطبین اضافه کنی، یا گزارش بدی 👇"
+PGACT_FORBIDDEN = "این عملیات برای این بازی معتبر نیست."
+
+REPORT_PICK_REASON = "دلیل گزارش حریف رو انتخاب کن:"
+REPORT_REASON_ABUSE = "رفتار نامناسب"
+REPORT_REASON_SEXUAL = "محتوای جنسی"
+REPORT_REASON_SPAM = "اسپم / تبلیغات"
+REPORT_REASON_OTHER = "سایر…"
+REPORT_ASK_OTHER = "توضیح کوتاه بنویس (یا «لغو»):"
+REPORT_OK = "گزارشت ثبت شد. ممنون ✅"
+REPORT_DUP = "قبلاً برای این بازی گزارش دادی."
+REPORT_SELF = "نمی‌تونی خودت رو گزارش کنی."
+REPORT_NO_OPPONENT = "حریفی برای گزارش پیدا نشد."
+REPORT_NEED_GAME = "فقط وقتی توی بازی هستی می‌تونی گزارش بدی."
+RESTRICTED_TEMP = (
+    "⛔️ فعلاً محدود شدی و نمی‌تونی بازی کنی.\n"
+    "تا: {until}\n"
+    "دلیل: {reason}"
+)
+RESTRICTED_PERMANENT = (
+    "⛔️ حسابت برای بازی به‌صورت دائمی محدود شده.\n"
+    "دلیل: {reason}"
+)
+ADMIN_BTN_MODERATION = "🚩 گزارش کاربران"
+ADMIN_BTN_USER_SEARCH = "🔎 جستجوی کاربر"
+ADMIN_USER_SEARCH_ASK = (
+    "🔎 جستجوی کاربر\n\n"
+    "آیدی عددی تلگرام، @یوزرنیم، اسم، شهر یا استان رو بفرست:"
+)
+ADMIN_USER_SEARCH_EMPTY = "چیزی پیدا نشد."
+ADMIN_USER_SEARCH_HEADER = "🔎 نتایج ({n}):\n\n{list}"
+ADMIN_MOD_HOME = (
+    "🚩 مدیریت گزارش‌ها و محدودیت‌ها\n\n"
+    "گزارش‌های باز: {open_n}\n"
+    "محدودیت‌های فعال: {ban_n}"
+)
+ADMIN_BTN_MOD_OPEN = "📋 گزارش‌های باز"
+ADMIN_BTN_MOD_BANS = "⛔️ محدودیت‌های فعال"
+ADMIN_MOD_EMPTY_REPORTS = "گزارش بازی نداریم."
+ADMIN_MOD_EMPTY_BANS = "محدودیت فعالی نیست."
+ADMIN_MOD_REPORTS_HEADER = "📋 گزارش‌های باز ({n}):\n\n{list}"
+ADMIN_MOD_BANS_HEADER = "⛔️ محدودیت‌های فعال ({n}):\n\n{list}"
+ADMIN_BTN_MOD_DISMISS = "✅ رد گزارش"
+ADMIN_BTN_MOD_LIFT = "🔓 برداشتن محدودیت"
+ADMIN_MOD_DISMISSED = "گزارش رد شد."
+ADMIN_MOD_RESTRICTED = "محدودیت اعمال شد ✅"
+ADMIN_MOD_LIFTED = "محدودیت برداشته شد."
+ADMIN_MOD_ASK_REASON = "دلیل محدودیت رو کوتاه بنویس (یا «بدون دلیل»):"
+ADMIN_BTN_BAN_1H = "۱ ساعت"
+ADMIN_BTN_BAN_6H = "۶ ساعت"
+ADMIN_BTN_BAN_24H = "۲۴ ساعت"
+ADMIN_BTN_BAN_7D = "۷ روز"
+ADMIN_BTN_BAN_30D = "۳۰ روز"
+ADMIN_BTN_BAN_PERM = "دائمی"
+ADMIN_MOD_NOTIFY_NEW = (
+    "🚩 گزارش جدید #{id}\n"
+    "علیه tg:{reported_tg}\n"
+    "دلیل: {reason}\n"
+    "/admin → گزارش کاربران"
+)
+ADMIN_MOD_USER_NOTIFIED = (
+    "به‌خاطر گزارش‌ها، دسترسی بازیت محدود شد.\n"
+    "{detail}"
+)

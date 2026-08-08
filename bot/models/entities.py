@@ -45,6 +45,7 @@ class User(Base):
     show_age: Mapped[bool] = mapped_column(Boolean, default=True)
     show_photo: Mapped[bool] = mapped_column(Boolean, default=False)
     show_private_id: Mapped[bool] = mapped_column(Boolean, default=False)  # default OFF
+    likes_count: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -87,7 +88,7 @@ class GameSession(Base):
     current_turn_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     current_target_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     round_number: Mapped[int] = mapped_column(Integer, default=0)
-    max_rounds: Mapped[int] = mapped_column(Integer, default=5)
+    max_rounds: Mapped[int] = mapped_column(Integer, default=10)
     # channel answer mode: buttons | comments
     channel_answer_mode: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     channel_options_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -136,7 +137,12 @@ class Round(Base):
     # truth | dare | pending
     choice: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     prompt_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # photo | voice | video | video_note
+    prompt_media_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    prompt_file_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     answer_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    answer_media_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    answer_file_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     # open | answered | skipped
     status: Mapped[str] = mapped_column(String(16), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -272,3 +278,101 @@ class AnalyticsEvent(Base):
     channel_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     province: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserReport(Base):
+    """Player-submitted report against another user."""
+
+    __tablename__ = "user_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    reported_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("game_sessions.id"), nullable=True, index=True
+    )
+    # abuse | sexual | spam | other
+    reason_code: Mapped[str] = mapped_column(String(32), default="other")
+    reason_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # open | reviewed | actioned | dismissed
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    admin_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    reporter: Mapped["User"] = relationship(foreign_keys=[reporter_id])
+    reported: Mapped["User"] = relationship(foreign_keys=[reported_id])
+
+
+class UserRestriction(Base):
+    """Timed or permanent play restriction applied by admins."""
+
+    __tablename__ = "user_restrictions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # temp | permanent
+    kind: Mapped[str] = mapped_column(String(16), default="temp")
+    until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    lifted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    report_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("user_reports.id"), nullable=True, index=True
+    )
+
+    user: Mapped["User"] = relationship()
+
+
+class UserLike(Base):
+    """A like from one user to another (always on the real account)."""
+
+    __tablename__ = "user_likes"
+    __table_args__ = (UniqueConstraint("liker_id", "liked_id", name="uq_user_like"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    liker_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    liked_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("game_sessions.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserContact(Base):
+    """Saved contact between two users."""
+
+    __tablename__ = "user_contacts"
+    __table_args__ = (UniqueConstraint("owner_id", "contact_id", name="uq_user_contact"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("game_sessions.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    contact: Mapped["User"] = relationship(foreign_keys=[contact_id])
+
+
+class PlayInvite(Base):
+    """Pending play request that must be accepted before a game starts."""
+
+    __tablename__ = "play_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # pending | accepted | rejected | expired | cancelled
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    from_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    to_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    from_user: Mapped["User"] = relationship(foreign_keys=[from_user_id])
+    to_user: Mapped["User"] = relationship(foreign_keys=[to_user_id])

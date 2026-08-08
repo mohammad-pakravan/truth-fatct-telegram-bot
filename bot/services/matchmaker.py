@@ -173,6 +173,11 @@ def enqueue(
     if game_engine.active_session_for_user(session, user):
         raise RuntimeError("already_in_game")
 
+    from bot.services import moderation as mod_svc
+
+    if mod_svc.is_restricted(session, user):
+        raise RuntimeError("restricted")
+
     existing = session.query(MatchQueue).filter_by(user_id=user.id).one_or_none()
     if existing:
         # Never steal a row that another worker is mid-claiming
@@ -209,13 +214,10 @@ def cancel(session: Session, user: User) -> bool:
     row = session.query(MatchQueue).filter_by(user_id=user.id).one_or_none()
     if not row:
         return False
-    if row.status == STATUS_MATCHING:
-        # Pairing in progress — do not cancel mid-claim
-        return False
-    was_waiting = row.status == STATUS_WAITING
+    # User-initiated leave always removes the queue row (even mid-claim)
     session.delete(row)
     session.flush()
-    return was_waiting
+    return True
 
 
 def expire_stale(session: Session) -> int:
@@ -263,6 +265,15 @@ def _compatible(a: MatchQueue, ua: User, b: MatchQueue, ub: User) -> bool:
         return False
 
     if not profile_complete(ua) or not profile_complete(ub):
+        return False
+
+    from bot.services import moderation as mod_svc
+
+    # Need session — use object_session
+    from sqlalchemy.orm import object_session
+
+    db = object_session(ua) or object_session(ub)
+    if db and (mod_svc.is_restricted(db, ua) or mod_svc.is_restricted(db, ub)):
         return False
 
     if not ub.allow_stranger_requests or not ua.allow_stranger_requests:

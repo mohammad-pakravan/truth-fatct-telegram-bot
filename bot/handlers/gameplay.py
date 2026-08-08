@@ -16,6 +16,85 @@ from bot.texts import fa as T
 
 logger = logging.getLogger(__name__)
 
+_MEDIA_TYPES = frozenset({"photo", "voice", "video", "video_note"})
+
+
+def _extract_media(message) -> tuple[str | None, str | None, str | None]:
+    """Return (media_type, file_id, caption_or_none) from a Telegram message."""
+    if not message:
+        return None, None, None
+    caption = (message.caption or "").strip() or None
+    if message.photo:
+        return "photo", message.photo[-1].file_id, caption
+    if message.voice:
+        return "voice", message.voice.file_id, caption
+    if message.video:
+        return "video", message.video.file_id, caption
+    if message.video_note:
+        return "video_note", message.video_note.file_id, caption
+    return None, None, None
+
+
+def _media_label(media_type: str | None) -> str:
+    return (T.MEDIA_ANSWER_LABEL or {}).get(media_type or "", "مدیا")
+
+
+async def _send_media(
+    bot,
+    chat_id: int,
+    *,
+    media_type: str | None,
+    file_id: str | None,
+    caption: str | None = None,
+    reply_markup=None,
+    protect_content: bool = True,
+) -> None:
+    """Send photo / voice / video / video_note with optional content protection."""
+    kwargs = {"protect_content": protect_content}
+    if media_type == "photo" and file_id:
+        await bot.send_photo(
+            chat_id,
+            photo=file_id,
+            caption=caption or None,
+            reply_markup=reply_markup,
+            **kwargs,
+        )
+        return
+    if media_type == "voice" and file_id:
+        await bot.send_voice(
+            chat_id,
+            voice=file_id,
+            caption=caption or None,
+            reply_markup=reply_markup,
+            **kwargs,
+        )
+        return
+    if media_type == "video" and file_id:
+        await bot.send_video(
+            chat_id,
+            video=file_id,
+            caption=caption or None,
+            reply_markup=reply_markup,
+            **kwargs,
+        )
+        return
+    if media_type == "video_note" and file_id:
+        await bot.send_video_note(chat_id, video_note=file_id, protect_content=protect_content)
+        if caption or reply_markup:
+            await bot.send_message(
+                chat_id,
+                caption or "🎬",
+                reply_markup=reply_markup,
+                protect_content=protect_content,
+            )
+        return
+    await bot.send_message(
+        chat_id,
+        (caption or "—").strip() or "—",
+        reply_markup=reply_markup,
+        protect_content=protect_content,
+    )
+
 
 async def send_in_game_menu(context, telegram_id: int, *, is_chooser: bool) -> None:
     """No-op: never send standalone menu-hint / wait messages."""
@@ -57,20 +136,333 @@ async def _end_active_game(context, session, user, game) -> None:
     summary = game.summary or ""
     status = game.status
     game_id = game.id
+    # Snapshot opponent ids before session work finishes
     for p in players:
         try:
-            await clear_td_glass(context.bot, p.user.telegram_id)
+            peer_tg = p.user.telegram_id
+            st.set_state(peer_tg, private_chat=False, private_chat_peer=None)
+            await clear_td_glass(context.bot, peer_tg)
+            other = next((x for x in players if x.user_id != p.user_id), None)
+            other_uid = other.user_id if other else None
             await context.bot.send_message(
-                p.user.telegram_id,
+                peer_tg,
                 f"{T.GAME_ENDED_BY_USER}\n{summary}",
                 reply_markup=kb.main_menu() if status != "guessing" else None,
             )
+            if other_uid and status != "guessing":
+                await _send_post_game_actions(context.bot, peer_tg, game_id, other_uid)
         except Exception:
             pass
     if status == "guessing":
         from bot.handlers import fake as fake_handler
 
         await fake_handler.prompt_final_guess(context, game_id, players)
+        # Still offer social actions on the real accounts
+        for p in players:
+            other = next((x for x in players if x.user_id != p.user_id), None)
+            if not other or not p.user:
+                continue
+            try:
+                await _send_post_game_actions(
+                    context.bot, p.user.telegram_id, game_id, other.user_id
+                )
+            except Exception:
+                pass
+
+
+async def _send_post_game_actions(bot, chat_id: int, game_id: int, target_user_id: int) -> None:
+    await bot.send_message(
+        chat_id,
+        T.POST_GAME_ACTIONS,
+        reply_markup=kb.post_game_actions_keyboard(game_id, target_user_id),
+    )
+
+
+def _other_player_tg(session, game, user) -> int | None:
+    players = game_engine.get_players(session, game)
+    other = next((p for p in players if p.user_id != user.id), None)
+    if not other or not other.user:
+        return None
+    return other.user.telegram_id
+
+
+async def start_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not update.message or not update.effective_user:
+        return False
+    with get_session() as session:
+        user = user_svc.get_or_create_user(
+            session, update.effective_user.id, update.effective_user.username
+        )
+        game = game_engine.active_session_for_user(session, user)
+        if not game:
+            await update.message.reply_text(T.REPORT_NEED_GAME)
+            return True
+        other = next(
+            (p for p in game_engine.get_players(session, game) if p.user_id != user.id),
+            None,
+        )
+        if not other:
+            await update.message.reply_text(T.REPORT_NO_OPPONENT)
+            return True
+        game_id = game.id
+    await update.message.reply_text(
+        T.REPORT_PICK_REASON,
+        reply_markup=kb.report_reason_keyboard(game_id),
+    )
+    return True
+
+
+async def on_user_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """ureport:<reason>:<game_id>"""
+    query = update.callback_query
+    if not query or not query.data or not update.effective_user:
+        return
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        await query.answer()
+        return
+    _, reason, sid = parts
+    game_id = int(sid)
+    tg = update.effective_user
+
+    if reason == "other":
+        st.set_state(tg.id, waiting="report_other", report_game_id=game_id)
+        await query.answer()
+        await query.edit_message_text(T.REPORT_ASK_OTHER)
+        return
+
+    await query.answer()
+    ok_msg = await _submit_report(context, tg, game_id, reason_code=reason, reason_text=None)
+    try:
+        await query.edit_message_text(ok_msg)
+    except Exception:
+        await context.bot.send_message(tg.id, ok_msg)
+
+
+async def on_post_game_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """pgact:like|contact|report:game_id:target_user_id — always targets real User."""
+    query = update.callback_query
+    if not query or not query.data or not update.effective_user:
+        return
+    parts = query.data.split(":")
+    if len(parts) != 4:
+        await query.answer()
+        return
+    _, action, sid, tid = parts
+    game_id = int(sid)
+    target_uid = int(tid)
+    tg = update.effective_user
+
+    from bot.services import social as social_svc
+
+    with get_session() as session:
+        me = user_svc.get_or_create_user(session, tg.id, tg.username)
+        if not social_svc.players_were_in_game(session, game_id, me.id, target_uid):
+            await query.answer(T.PGACT_FORBIDDEN, show_alert=True)
+            return
+        target = session.get(User, target_uid)
+        if not target:
+            await query.answer(T.PGACT_FORBIDDEN, show_alert=True)
+            return
+
+        if action == "like":
+            status, n = social_svc.like_user(session, me, target, session_id=game_id)
+            msg = {
+                "liked": T.LIKE_OK.format(n=n),
+                "unliked": T.LIKE_REMOVED.format(n=n),
+                "self": T.LIKE_SELF,
+            }.get(status, T.ERROR_GENERIC)
+            await query.answer(msg, show_alert=True)
+            return
+
+        if action == "contact":
+            status = social_svc.add_contact(session, me, target, session_id=game_id)
+            msg = {
+                "added": T.CONTACT_ADDED,
+                "exists": T.CONTACT_EXISTS,
+                "self": T.CONTACT_SELF,
+            }.get(status, T.ERROR_GENERIC)
+            await query.answer(msg, show_alert=True)
+            return
+
+        if action == "report":
+            await query.answer()
+            try:
+                await query.edit_message_text(
+                    T.REPORT_PICK_REASON,
+                    reply_markup=kb.report_reason_keyboard(game_id),
+                )
+            except Exception:
+                await context.bot.send_message(
+                    tg.id,
+                    T.REPORT_PICK_REASON,
+                    reply_markup=kb.report_reason_keyboard(game_id),
+                )
+            return
+
+    await query.answer()
+
+
+async def report_other_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not update.message or not update.effective_user or not update.message.text:
+        return False
+    tg = update.effective_user
+    state = st.get(tg.id)
+    if state.get("waiting") != "report_other":
+        return False
+    text = update.message.text.strip()
+    if text in (T.BTN_CANCEL, T.BTN_BACK):
+        st.set_state(tg.id, waiting=None, report_game_id=None)
+        await update.message.reply_text(T.ADMIN_CANCELLED)
+        return True
+    game_id = state.get("report_game_id")
+    st.set_state(tg.id, waiting=None, report_game_id=None)
+    if not game_id:
+        await update.message.reply_text(T.REPORT_NEED_GAME)
+        return True
+    msg = await _submit_report(
+        context, tg, int(game_id), reason_code="other", reason_text=text
+    )
+    await update.message.reply_text(msg)
+    return True
+
+
+async def _submit_report(context, tg, game_id: int, *, reason_code: str, reason_text: str | None) -> str:
+    from bot.config import ADMIN_IDS
+    from bot.services import moderation as mod_svc
+
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username)
+        game = game_engine.get_session(session, game_id)
+        if not game:
+            return T.REPORT_NEED_GAME
+        players = game_engine.get_players(session, game)
+        if user.id not in {p.user_id for p in players}:
+            return T.REPORT_NEED_GAME
+        other = next((p for p in players if p.user_id != user.id), None)
+        if not other or not other.user:
+            return T.REPORT_NO_OPPONENT
+        row, status = mod_svc.create_report(
+            session,
+            reporter=user,
+            reported=other.user,
+            reason_code=reason_code,
+            reason_text=reason_text,
+            session_id=game_id,
+        )
+        if status == "duplicate":
+            return T.REPORT_DUP
+        if status == "self":
+            return T.REPORT_SELF
+        reported_tg = other.user.telegram_id
+        report_id = row.id if row else 0
+        reason_label = mod_svc.reason_label(reason_code)
+
+    # Notify env admins (best-effort)
+    note = T.ADMIN_MOD_NOTIFY_NEW.format(
+        id=report_id, reported_tg=reported_tg, reason=reason_label
+    )
+    for admin_tid in ADMIN_IDS:
+        try:
+            await context.bot.send_message(admin_tid, note)
+        except Exception:
+            pass
+    return T.REPORT_OK
+
+
+async def open_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not update.message or not update.effective_user:
+        return False
+    tg = update.effective_user
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username)
+        game = game_engine.active_session_for_user(session, user)
+        if not game:
+            await update.message.reply_text(T.PRIVATE_CHAT_NEED_GAME, reply_markup=kb.main_menu())
+            return True
+        peer_tg = _other_player_tg(session, game, user)
+        if not peer_tg:
+            await update.message.reply_text("حریف پیدا نشد.")
+            return True
+        game_id = game.id
+
+    st.set_state(tg.id, private_chat=True, private_chat_peer=peer_tg, private_chat_game_id=game_id)
+    await update.message.reply_text(T.PRIVATE_CHAT_ON, reply_markup=kb.private_chat_menu())
+
+    peer_state = st.get(peer_tg)
+    if not peer_state.get("private_chat"):
+        try:
+            await context.bot.send_message(
+                peer_tg,
+                T.PRIVATE_CHAT_PEER_ON,
+                reply_markup=kb.in_game_menu(),
+            )
+        except Exception:
+            pass
+    return True
+
+
+async def close_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not update.message or not update.effective_user:
+        return False
+    tg = update.effective_user
+    st.set_state(tg.id, private_chat=False)
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username)
+        game = game_engine.active_session_for_user(session, user)
+        awaiting = False
+        is_chooser = False
+        if game:
+            rnd = game_engine.get_active_round(session, game)
+            is_chooser = bool(rnd and rnd.chooser_user_id == user.id and not rnd.choice)
+            awaiting = bool(
+                rnd
+                and rnd.target_user_id == user.id
+                and rnd.choice
+                and game_engine.round_has_prompt(rnd)
+                and rnd.status == "open"
+            )
+    markup = kb.in_game_menu(is_chooser=is_chooser, awaiting_answer=awaiting)
+    await update.message.reply_text(T.PRIVATE_CHAT_OFF, reply_markup=markup)
+    return True
+
+
+async def relay_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Relay any message to the matched peer with protect_content."""
+    if not update.message or not update.effective_user:
+        return False
+    tg = update.effective_user
+    state = st.get(tg.id)
+    if not state.get("private_chat"):
+        return False
+    peer_tg = state.get("private_chat_peer")
+    if not peer_tg:
+        return False
+    text = (update.message.text or "").strip()
+    if text in {
+        T.BTN_PRIVATE_CHAT,
+        T.BTN_PRIVATE_CHAT_EXIT,
+        T.BTN_GAME_PROFILE,
+        T.BTN_GAME_END,
+        T.BTN_SKIP,
+        T.BTN_TRUTH,
+        T.BTN_DARE,
+        T.BTN_GAME_WAIT,
+        T.BTN_REPORT_USER,
+    }:
+        return False
+    try:
+        await context.bot.copy_message(
+            chat_id=peer_tg,
+            from_chat_id=update.effective_chat.id,
+            message_id=update.message.message_id,
+            protect_content=True,
+        )
+    except Exception:
+        logger.exception("private chat relay failed %s -> %s", tg.id, peer_tg)
+        await update.message.reply_text("ارسال به حریف ناموفق بود.")
+        return True
+    return True
 
 
 async def _ask_chooser_for_prompt(
@@ -121,26 +513,59 @@ async def _deliver_prompt_to_target(
     game_type: str | None = None,
     chat_id: int | None = None,
     target_name: str | None = None,
+    media_type: str | None = None,
+    file_id: str | None = None,
 ) -> None:
-    msg = T.YOUR_PROMPT.format(kind=kind, prompt=prompt)
-    msg = f"{T.ROUND_INFO.format(n=round_number, max=max_rounds)}\n\n{msg}"
-    mid = await upsert_hub(
-        context.bot,
-        target_tg,
-        msg,
-        message_id=st.get(target_tg).get("game_hub_message_id"),
-        reply_kb=kb.in_game_menu(awaiting_answer=True),
-        replace_keyboard=True,
-    )
-    st.set_state(target_tg, game_hub_message_id=mid)
+    if file_id and media_type:
+        intro = T.YOUR_PROMPT_MEDIA.format(kind=kind)
+        intro = f"{T.ROUND_INFO.format(n=round_number, max=max_rounds)}\n\n{intro}"
+        mid = await upsert_hub(
+            context.bot,
+            target_tg,
+            intro,
+            message_id=st.get(target_tg).get("game_hub_message_id"),
+            reply_kb=kb.in_game_menu(awaiting_answer=True),
+            replace_keyboard=True,
+        )
+        st.set_state(target_tg, game_hub_message_id=mid)
+        await _send_media(
+            context.bot,
+            target_tg,
+            media_type=media_type,
+            file_id=file_id,
+            caption=prompt if prompt and prompt != _media_label(media_type) else None,
+        )
+    else:
+        msg = T.YOUR_PROMPT.format(kind=kind, prompt=prompt)
+        msg = f"{T.ROUND_INFO.format(n=round_number, max=max_rounds)}\n\n{msg}"
+        mid = await upsert_hub(
+            context.bot,
+            target_tg,
+            msg,
+            message_id=st.get(target_tg).get("game_hub_message_id"),
+            reply_kb=kb.in_game_menu(awaiting_answer=True),
+            replace_keyboard=True,
+        )
+        st.set_state(target_tg, game_hub_message_id=mid)
     if chat_id and game_type == "group":
         label = target_name or "بازیکن"
         try:
-            await context.bot.send_message(
-                chat_id,
-                f"{label} — {kind}:\n{prompt}",
-                reply_markup=kb.skip_answer(game_id),
-            )
+            if file_id and media_type:
+                await context.bot.send_message(chat_id, f"{label} — {kind}:")
+                await _send_media(
+                    context.bot,
+                    chat_id,
+                    media_type=media_type,
+                    file_id=file_id,
+                    caption=prompt if prompt and prompt != _media_label(media_type) else None,
+                    reply_markup=kb.skip_answer(game_id),
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id,
+                    f"{label} — {kind}:\n{prompt}",
+                    reply_markup=kb.skip_answer(game_id),
+                )
         except Exception:
             logger.exception("group prompt notify failed chat_id=%s", chat_id)
 
@@ -163,7 +588,7 @@ async def resume_active_game_keyboard(
             rnd
             and rnd.target_user_id == user.id
             and rnd.choice
-            and rnd.prompt_text
+            and game_engine.round_has_prompt(rnd)
             and rnd.status == "open"
         )
         game_id = game.id
@@ -195,7 +620,7 @@ async def resume_active_game_keyboard(
 
 
 async def custom_prompt_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Chooser submits the truth/dare question for the opponent."""
+    """Chooser submits a text question for the opponent."""
     if not update.message or not update.effective_user or not update.message.text:
         return False
     tg = update.effective_user
@@ -217,6 +642,21 @@ async def custom_prompt_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("سؤال رو کامل‌تر بنویس 🙂")
         return True
 
+    return await _submit_custom_prompt(
+        update, context, prompt_text=text, media_type=None, file_id=None
+    )
+
+
+async def _submit_custom_prompt(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    prompt_text: str | None,
+    media_type: str | None,
+    file_id: str | None,
+) -> bool:
+    tg = update.effective_user
+    state = st.get(tg.id)
     game_id = state.get("custom_prompt_game_id")
     choice = state.get("custom_prompt_choice")
     if not game_id or choice not in ("truth", "dare"):
@@ -235,11 +675,18 @@ async def custom_prompt_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
             st.set_state(tg.id, wait=None, custom_prompt_game_id=None, custom_prompt_choice=None)
             await update.message.reply_text(T.NOT_YOUR_TURN, reply_markup=kb.in_game_menu())
             return True
-        if rnd.prompt_text:
+        if game_engine.round_has_prompt(rnd):
             st.set_state(tg.id, wait=None, custom_prompt_game_id=None, custom_prompt_choice=None)
             return True
 
-        prompt = game_engine.apply_choice(session, rnd, choice, prompt=text)
+        prompt = game_engine.apply_choice(
+            session,
+            rnd,
+            choice,
+            prompt=prompt_text,
+            media_type=media_type,
+            file_id=file_id,
+        )
         target = session.get(User, rnd.target_user_id)
         kind = T.BTN_TRUTH if choice == "truth" else T.BTN_DARE
         target_tg = target.telegram_id if target else None
@@ -249,6 +696,8 @@ async def custom_prompt_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         max_rounds = game.max_rounds
         snap_game_id = game.id
         game_type = game.game_type
+        snap_media_type = media_type
+        snap_file_id = file_id
 
     st.set_state(tg.id, wait=None, custom_prompt_game_id=None, custom_prompt_choice=None)
     action_id = await upsert_action(
@@ -273,6 +722,8 @@ async def custom_prompt_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
             game_type=game_type,
             chat_id=chat_id,
             target_name=target_name,
+            media_type=snap_media_type,
+            file_id=snap_file_id,
         )
     except Exception:
         logger.exception(
@@ -291,12 +742,19 @@ async def game_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if text not in {
         T.BTN_GAME_PROFILE,
         T.BTN_GAME_END,
+        T.BTN_PRIVATE_CHAT,
+        T.BTN_PRIVATE_CHAT_EXIT,
         T.BTN_TRUTH,
         T.BTN_DARE,
         T.BTN_GAME_WAIT,
         T.BTN_SKIP,
     }:
         return False
+
+    if text == T.BTN_PRIVATE_CHAT:
+        return await open_private_chat(update, context)
+    if text == T.BTN_PRIVATE_CHAT_EXIT:
+        return await close_private_chat(update, context)
 
     with get_session() as session:
         user = user_svc.get_or_create_user(
@@ -321,7 +779,7 @@ async def game_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return True
 
         if text == T.BTN_SKIP:
-            if not rnd or rnd.target_user_id != user.id or not rnd.choice or not rnd.prompt_text:
+            if not rnd or rnd.target_user_id != user.id or not rnd.choice or not game_engine.round_has_prompt(rnd):
                 await update.message.reply_text(T.NOT_YOUR_TURN)
                 return True
             game_engine.submit_answer(session, rnd, None)
@@ -441,21 +899,73 @@ async def on_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _finish_answer(update, context, session_id, answer=None, via_callback=True)
 
 
-async def answer_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Capture answers when user is the target of an open round with a prompt."""
+async def answer_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Capture text answers when user is the target of an open round with a prompt."""
     if not update.message or not update.effective_user or not update.message.text:
-        return
+        return False
     text = update.message.text.strip()
     if text.startswith("/") or text.startswith(
-        ("🎭", "📍", "🕶", "👤", "🤝", "📖", "💬", "🔗", "👥", "✏️", "📜", "🔙", "🙂", "⛔", "⏳", "❌", "👁", "⏭")
+        ("🎭", "📍", "🕶", "👤", "🤝", "📖", "💬", "🔗", "👥", "✏️", "📜", "🔙", "🙂", "⛔", "⏳", "❌", "👁", "⏭", "🔒", "🎮", "🚩")
     ):
-        return
+        return False
+    return await _submit_answer(
+        update, context, answer_text=text, media_type=None, file_id=None
+    )
+
+
+async def on_game_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Handle photo / voice / video / video_note as prompt, answer, or private chat."""
+    if not update.message or not update.effective_user:
+        return False
+    media_type, file_id, caption = _extract_media(update.message)
+    if not media_type or not file_id:
+        return False
+
+    state = st.get(update.effective_user.id)
+    if state.get("wait") == "custom_prompt":
+        await _submit_custom_prompt(
+            update,
+            context,
+            prompt_text=caption,
+            media_type=media_type,
+            file_id=file_id,
+        )
+        return True
+
+    handled = await _submit_answer(
+        update,
+        context,
+        answer_text=caption,
+        media_type=media_type,
+        file_id=file_id,
+    )
+    if handled:
+        return True
+
+    if await relay_private_chat(update, context):
+        return True
+    return False
+
+
+async def _submit_answer(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    answer_text: str | None,
+    media_type: str | None,
+    file_id: str | None,
+) -> bool:
+    if not update.message or not update.effective_user:
+        return False
+    if not (answer_text and answer_text.strip()) and not file_id:
+        return False
 
     with get_session() as session:
         user = user_svc.get_or_create_user(
             session, update.effective_user.id, update.effective_user.username
         )
         from bot.models import GameSession, Round
+        from sqlalchemy import or_
 
         rows = (
             session.query(Round, GameSession)
@@ -465,20 +975,41 @@ async def answer_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 Round.target_user_id == user.id,
                 Round.status == "open",
                 Round.choice.isnot(None),
-                Round.prompt_text.isnot(None),
+                or_(
+                    Round.prompt_text.isnot(None),
+                    Round.prompt_file_id.isnot(None),
+                ),
             )
             .order_by(Round.id.desc())
             .all()
         )
         if not rows:
-            return
+            return False
         rnd, game = rows[0]
-        game_engine.submit_answer(session, rnd, text)
+        game_engine.submit_answer(
+            session,
+            rnd,
+            (answer_text or "").strip() or None,
+            media_type=media_type,
+            file_id=file_id,
+        )
+        snap_media = media_type
+        snap_file = file_id
+        snap_text = (answer_text or "").strip() or None
         await update.message.reply_text(
             T.ANSWER_RECEIVED,
             reply_markup=kb.in_game_menu(is_chooser=False),
         )
-        await _notify_and_advance(context, session, game, user, text)
+        await _notify_and_advance(
+            context,
+            session,
+            game,
+            user,
+            snap_text,
+            media_type=snap_media,
+            file_id=snap_file,
+        )
+    return True
 
 
 async def _finish_answer(update, context, session_id, answer, via_callback=False):
@@ -494,7 +1025,7 @@ async def _finish_answer(update, context, session_id, answer, via_callback=False
             if via_callback:
                 await update.callback_query.edit_message_text(T.NOT_YOUR_TURN)
             return
-        if not rnd.choice or not rnd.prompt_text:
+        if not rnd.choice or not game_engine.round_has_prompt(rnd):
             return
         game_engine.submit_answer(session, rnd, answer)
         if via_callback:
@@ -502,10 +1033,22 @@ async def _finish_answer(update, context, session_id, answer, via_callback=False
         await _notify_and_advance(context, session, game, user, answer or "رد شد")
 
 
-async def _notify_and_advance(context, session, game, user, answer_text):
+async def _notify_and_advance(
+    context,
+    session,
+    game,
+    user,
+    answer_text,
+    *,
+    media_type: str | None = None,
+    file_id: str | None = None,
+):
     players = game_engine.get_players(session, game)
     anonymous = game.game_type == "anonymous"
-    body = (answer_text or "").strip() or "—"
+    if file_id and media_type:
+        body = (answer_text or "").strip() or None
+    else:
+        body = (answer_text or "").strip() or "—"
 
     nxt = game_engine.advance_round(session, game)
 
@@ -513,21 +1056,36 @@ async def _notify_and_advance(context, session, game, user, answer_text):
         if p.user_id == user.id:
             continue
         try:
-            await context.bot.send_message(
+            await _send_media(
+                context.bot,
                 p.user.telegram_id,
-                body,
+                media_type=media_type,
+                file_id=file_id,
+                caption=body,
                 reply_markup=kb.in_game_menu(is_chooser=False),
             )
         except Exception:
             pass
     if game.chat_id and game.game_type == "group":
         try:
-            await context.bot.send_message(game.chat_id, body)
+            await _send_media(
+                context.bot,
+                game.chat_id,
+                media_type=media_type,
+                file_id=file_id,
+                caption=body,
+            )
         except Exception:
             pass
 
     if nxt is None and game.status in ("finished", "guessing"):
         summary = game.summary or ""
+        game_id = game.id
+        pairs = []
+        for p in players:
+            other = next((x for x in players if x.user_id != p.user_id), None)
+            if p.user and other:
+                pairs.append((p.user.telegram_id, other.user_id))
         for p in players:
             try:
                 await context.bot.send_message(
@@ -535,6 +1093,11 @@ async def _notify_and_advance(context, session, game, user, answer_text):
                     T.GAME_OVER.format(summary=summary),
                     reply_markup=kb.main_menu(),
                 )
+            except Exception:
+                pass
+        for tg_id, other_uid in pairs:
+            try:
+                await _send_post_game_actions(context.bot, tg_id, game_id, other_uid)
             except Exception:
                 pass
         if game.status == "guessing":

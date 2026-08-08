@@ -84,6 +84,11 @@ def accept_invite(session: Session, joiner: User, token: str) -> AcceptedInvite:
     ):
         raise RuntimeError("busy")
 
+    from bot.services import moderation as mod_svc
+
+    if mod_svc.is_restricted(session, joiner) or mod_svc.is_restricted(session, owner):
+        raise RuntimeError("restricted")
+
     label = inviter_label(inv)
     mode = owner_identity_mode(inv)
     game = game_engine.create_session(session, "friends", starter=owner)

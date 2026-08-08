@@ -27,6 +27,76 @@ def init_db() -> None:
     _migrate_fake_identity_columns()
     _migrate_sponsored_channel_province()
     _migrate_game_session_inline_message()
+    _migrate_round_media_columns()
+    _migrate_user_likes_count()
+
+
+def _migrate_user_likes_count() -> None:
+    """Add likes_count on users."""
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
+            cols = {r[1] for r in rows}
+            if "likes_count" not in cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE users ADD COLUMN likes_count INTEGER DEFAULT 0"
+                )
+        return
+
+    if "postgresql" not in DATABASE_URL:
+        return
+
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'users' AND column_name = 'likes_count'"
+                )
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN likes_count INTEGER DEFAULT 0")
+                )
+    except Exception:
+        pass
+
+
+def _migrate_round_media_columns() -> None:
+    """Add prompt/answer media columns on rounds."""
+    cols = [
+        ("prompt_media_type", "VARCHAR(16)"),
+        ("prompt_file_id", "VARCHAR(256)"),
+        ("answer_media_type", "VARCHAR(16)"),
+        ("answer_file_id", "VARCHAR(256)"),
+    ]
+
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(rounds)").fetchall()
+            existing = {r[1] for r in rows}
+            for name, ddl in cols:
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE rounds ADD COLUMN {name} {ddl}")
+        return
+
+    if "postgresql" not in DATABASE_URL:
+        return
+
+    for name, ddl in cols:
+        try:
+            with engine.begin() as conn:
+                exists = conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = 'rounds' AND column_name = :col"
+                    ),
+                    {"col": name},
+                ).fetchone()
+                if not exists:
+                    conn.execute(text(f"ALTER TABLE rounds ADD COLUMN {name} {ddl}"))
+        except Exception:
+            pass
 
 
 def _migrate_game_session_inline_message() -> None:

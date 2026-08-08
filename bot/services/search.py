@@ -120,3 +120,164 @@ def filters_summary(prefs: dict[str, Any]) -> str:
     if sort_txt:
         lines.append(f"📊  ترتیب نمایش: {sort_txt}")
     return "\n".join(lines)
+
+
+def admin_search_users(session: Session, query: str, *, limit: int = 25) -> list[User]:
+    """Admin search by telegram id, @username, name, city, or province."""
+    q = (query or "").strip()
+    if not q:
+        return []
+
+    raw = q.lstrip("@")
+    if raw.isdigit():
+        tid = int(raw)
+        row = session.query(User).filter(User.telegram_id == tid).one_or_none()
+        return [row] if row else []
+
+    like = f"%{q}%"
+    rows = (
+        session.query(User)
+        .filter(
+            (User.username.ilike(like))
+            | (User.display_name.ilike(like))
+            | (User.nickname.ilike(like))
+            | (User.city.ilike(like))
+            | (User.province.ilike(like))
+        )
+        .limit(limit * 2)
+        .all()
+    )
+    rows.sort(key=lambda u: u.last_active_at or datetime.min, reverse=True)
+    return rows[:limit]
+
+
+def public_find_users(
+    session: Session,
+    me: User,
+    *,
+    gender: str | None,
+    province: str | None,
+    name_filter: str | None = None,
+    limit: int = 30,
+) -> list[User]:
+    """Public inline/advanced-style find: gender + optional province."""
+    from bot.services import users as user_svc
+
+    q = session.query(User).filter(
+        User.id != me.id,
+        User.allow_stranger_requests.is_(True),
+    )
+    # Only complete profiles
+    q = q.filter(
+        User.display_name.isnot(None),
+        User.display_name != "",
+        User.province.isnot(None),
+        User.city.isnot(None),
+        User.gender.isnot(None),
+        User.age.isnot(None),
+    )
+    if gender in ("male", "female"):
+        q = q.filter(User.gender == gender)
+    if province:
+        q = q.filter(User.province == province)
+    if name_filter:
+        like = f"%{name_filter}%"
+        q = q.filter(
+            (User.display_name.ilike(like))
+            | (User.nickname.ilike(like))
+            | (User.city.ilike(like))
+        )
+    rows = q.all()
+    rows = [u for u in rows if user_svc.profile_complete(u)]
+    rows.sort(key=lambda u: u.last_active_at or datetime.min, reverse=True)
+    return rows[:limit]
+
+
+def parse_gender_province_query(qtext: str) -> dict[str, Any] | None:
+    """
+    Parse inline find queries like:
+      پسر تهران | دختر اصفهان | male تهران | find پسر تهران | جستجو دختر
+    Returns dict with gender, province, name_filter — or None if not a find query.
+    """
+    from bot.provinces import PROVINCES
+
+    raw = (qtext or "").strip()
+    if not raw:
+        return None
+
+    parts = raw.split()
+    head = parts[0].lower()
+    rest_parts = parts[1:] if head in (
+        "find",
+        "search",
+        "جستجو",
+        "کاربر",
+        "users",
+        "user",
+    ) else parts
+    if head in ("find", "search", "جستجو", "کاربر", "users", "user"):
+        if not rest_parts:
+            return {"gender": None, "province": None, "name_filter": None, "explicit": True}
+        blob = " ".join(rest_parts)
+    else:
+        blob = raw
+        # Must look like a gender/province find (not likes/contacts/شروع)
+        gender_words = ("پسر", "دختر", "male", "female", "آقا", "خانم", "مرد", "زن")
+        if not any(w in blob for w in gender_words) and not any(
+            p in blob for p in PROVINCES
+        ):
+            return None
+        # Avoid stealing likes/contacts
+        if head in ("likes", "like", "liked", "لایک", "contacts", "contact", "مخاطب", "مخاطبین"):
+            return None
+
+    gender = None
+    gmap = {
+        "پسر": "male",
+        "آقا": "male",
+        "مرد": "male",
+        "male": "male",
+        "دختر": "female",
+        "خانم": "female",
+        "زن": "female",
+        "female": "female",
+    }
+    tokens = blob.replace("،", " ").split()
+    leftover: list[str] = []
+    province = None
+    # Longest province match first
+    sorted_provs = sorted(PROVINCES, key=len, reverse=True)
+    remaining = blob
+    for gword, gcode in gmap.items():
+        if gword in tokens or gword in remaining:
+            gender = gcode
+            remaining = remaining.replace(gword, " ", 1)
+            break
+    remaining = " ".join(remaining.split())
+    for prov in sorted_provs:
+        if prov in remaining:
+            province = prov
+            remaining = remaining.replace(prov, " ", 1)
+            break
+    name_filter = " ".join(remaining.split()) or None
+
+    # Require at least gender or province for implicit queries
+    if gender is None and province is None and name_filter is None:
+        return None
+    if gender is None and province is None and head not in (
+        "find",
+        "search",
+        "جستجو",
+        "کاربر",
+        "users",
+        "user",
+    ):
+        # bare name without gender/province — don't hijack
+        return None
+
+    return {
+        "gender": gender,
+        "province": province,
+        "name_filter": name_filter,
+        "explicit": head in ("find", "search", "جستجو", "کاربر", "users", "user"),
+    }

@@ -1,21 +1,39 @@
 ﻿from __future__ import annotations
 
+import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot import keyboards as kb
 from bot import state as st
+from bot.config import BROADCAST_RATE_PER_SECOND
 from bot.db import get_session
 from bot.keyboards import main_menu
+from bot.models import User
 from bot.provinces import PROVINCES
 from bot.services import admins as admin_svc
+from bot.services import broadcast as bc_svc
 from bot.services import membership as mem_svc
+from bot.services import moderation as mod_svc
 from bot.services import reports as report_svc
+from bot.services import matchmaker
+from bot.services import game_engine
+from bot.services import search as search_svc
+from bot.services.presence import format_last_seen, online_emoji
 from bot.texts import fa as T
+
+logger = logging.getLogger(__name__)
 
 
 def _require_admin(session, tg_id: int) -> bool:
     return admin_svc.is_admin(session, tg_id)
+
+
+def _all_telegram_ids() -> list[int]:
+    with get_session() as session:
+        rows = session.query(User.telegram_id).order_by(User.id.asc()).all()
+        return [int(r[0]) for r in rows if r[0]]
 
 
 async def open_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -45,8 +63,56 @@ async def admin_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
 
     if data in ("admin:home", "admin:noop"):
-        st.set_state(tg.id, mode="admin", waiting=None, admin_ch_province=None)
+        st.set_state(
+            tg.id,
+            mode="admin",
+            waiting=None,
+            admin_ch_province=None,
+            admin_bc_target=None,
+            admin_bc_from=None,
+            admin_bc_mid=None,
+        )
         await query.edit_message_text(T.ADMIN_HOME, reply_markup=kb.admin_home_keyboard())
+        return
+
+    if data == "admin:broadcast":
+        st.set_state(
+            tg.id,
+            mode="admin",
+            waiting=None,
+            admin_bc_target=None,
+            admin_bc_from=None,
+            admin_bc_mid=None,
+        )
+        await query.edit_message_text(T.ADMIN_BC_MENU, reply_markup=kb.admin_broadcast_keyboard())
+        return
+
+    if data == "admin:bc:all":
+        if bc_svc.is_busy():
+            await query.edit_message_text(T.ADMIN_BC_BUSY, reply_markup=kb.admin_broadcast_keyboard())
+            return
+        st.set_state(tg.id, mode="admin", waiting="admin_bc_msg", admin_bc_target="all")
+        await query.edit_message_text(T.ADMIN_BC_ASK_MSG)
+        return
+
+    if data == "admin:bc:one":
+        if bc_svc.is_busy():
+            await query.edit_message_text(T.ADMIN_BC_BUSY, reply_markup=kb.admin_broadcast_keyboard())
+            return
+        st.set_state(tg.id, mode="admin", waiting="admin_bc_target", admin_bc_target=None)
+        await query.edit_message_text(T.ADMIN_BC_ASK_TARGET)
+        return
+
+    if data == "admin:bc:go":
+        await _start_broadcast(query, context, tg.id)
+        return
+
+    if data == "admin:usearch" or data.startswith("admin:usearch:"):
+        await _user_search_callbacks(query, context, tg, data)
+        return
+
+    if data == "admin:mod" or data.startswith("admin:mod:"):
+        await _moderation_callbacks(query, context, tg, data)
         return
 
     if data == "admin:channels":
@@ -112,6 +178,91 @@ async def admin_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             admin_svc.remove_admin(session, tid)
         await _show_admins(query)
         return
+
+
+async def _resolve_targets(target) -> list[int]:
+    if target == "all" or target is None:
+        return _all_telegram_ids()
+    try:
+        return [int(target)]
+    except (TypeError, ValueError):
+        return []
+
+
+async def _start_broadcast(query, context: ContextTypes.DEFAULT_TYPE, admin_tg: int) -> None:
+    state = st.get(admin_tg)
+    from_chat = state.get("admin_bc_from")
+    mid = state.get("admin_bc_mid")
+    target = state.get("admin_bc_target")
+    if not from_chat or not mid:
+        await query.edit_message_text(T.ADMIN_BC_NO_PENDING, reply_markup=kb.admin_home_keyboard())
+        return
+    if bc_svc.is_busy():
+        await query.edit_message_text(T.ADMIN_BC_BUSY, reply_markup=kb.admin_home_keyboard())
+        return
+
+    user_ids = await _resolve_targets(target)
+    if not user_ids:
+        await query.edit_message_text(T.ADMIN_BC_EMPTY, reply_markup=kb.admin_home_keyboard())
+        return
+
+    st.set_state(
+        admin_tg,
+        waiting=None,
+        admin_bc_from=None,
+        admin_bc_mid=None,
+        admin_bc_target=None,
+    )
+    await query.edit_message_text(T.ADMIN_BC_STARTED)
+
+    status_chat = query.message.chat_id
+    status_mid = query.message.message_id
+
+    async def on_progress(done: int, total: int, ok: int, bad: int) -> None:
+        try:
+            await context.bot.edit_message_text(
+                T.ADMIN_BC_PROGRESS.format(done=done, total=total, ok=ok, bad=bad),
+                chat_id=status_chat,
+                message_id=status_mid,
+            )
+        except Exception:
+            pass
+
+    async def runner() -> None:
+        try:
+            result = await bc_svc.copy_to_users(
+                context.bot,
+                from_chat_id=int(from_chat),
+                message_id=int(mid),
+                user_ids=user_ids,
+                on_progress=on_progress,
+            )
+            await context.bot.edit_message_text(
+                T.ADMIN_BC_DONE.format(**result),
+                chat_id=status_chat,
+                message_id=status_mid,
+                reply_markup=kb.admin_home_keyboard(),
+            )
+        except RuntimeError:
+            await context.bot.edit_message_text(
+                T.ADMIN_BC_BUSY,
+                chat_id=status_chat,
+                message_id=status_mid,
+                reply_markup=kb.admin_home_keyboard(),
+            )
+        except Exception:
+            logger.exception("broadcast runner failed")
+            try:
+                await context.bot.edit_message_text(
+                    T.ERROR_GENERIC,
+                    chat_id=status_chat,
+                    message_id=status_mid,
+                    reply_markup=kb.admin_home_keyboard(),
+                )
+            except Exception:
+                pass
+
+    context.application.create_task(runner())
 
 
 async def _show_report(query, data: str) -> None:
@@ -186,6 +337,44 @@ async def _show_admins(query) -> None:
         await query.edit_message_text(body.replace("`", ""), reply_markup=markup)
 
 
+async def _confirm_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Store admin message for copy_message and ask confirmation."""
+    if not update.message or not update.effective_user:
+        return False
+    tg = update.effective_user
+    state = st.get(tg.id)
+    if state.get("mode") != "admin" or state.get("waiting") != "admin_bc_msg":
+        return False
+
+    with get_session() as session:
+        if not _require_admin(session, tg.id):
+            return False
+
+    target = state.get("admin_bc_target")
+    user_ids = await _resolve_targets(target)
+    if not user_ids:
+        await update.message.reply_text(T.ADMIN_BC_EMPTY, reply_markup=kb.admin_home_keyboard())
+        st.set_state(tg.id, waiting=None, admin_bc_target=None)
+        return True
+
+    st.set_state(
+        tg.id,
+        waiting="admin_bc_confirm",
+        admin_bc_from=update.effective_chat.id,
+        admin_bc_mid=update.message.message_id,
+    )
+    await update.message.reply_text(
+        T.ADMIN_BC_CONFIRM.format(n=len(user_ids), rate=int(BROADCAST_RATE_PER_SECOND)),
+        reply_markup=kb.admin_broadcast_confirm_keyboard(),
+    )
+    return True
+
+
+async def admin_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Accept media while admin is composing a broadcast."""
+    return await _confirm_broadcast_message(update, context)
+
+
 async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Handle admin waiting inputs. Returns True if handled."""
     if not update.message or not update.effective_user or not update.message.text:
@@ -202,9 +391,35 @@ async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
             return False
 
     if text == T.BTN_CANCEL or text == T.BTN_BACK:
-        st.set_state(tg.id, mode="admin", waiting=None, admin_ch_province=None)
+        st.set_state(
+            tg.id,
+            mode="admin",
+            waiting=None,
+            admin_ch_province=None,
+            admin_bc_target=None,
+            admin_bc_from=None,
+            admin_bc_mid=None,
+        )
         await update.message.reply_text(T.ADMIN_CANCELLED, reply_markup=kb.admin_home_keyboard())
         return True
+
+    if waiting == "admin_bc_target":
+        raw = text.replace(" ", "")
+        if not raw.isdigit():
+            await update.message.reply_text(T.ADMIN_BC_BAD_TARGET)
+            return True
+        tid = int(raw)
+        with get_session() as session:
+            exists = session.query(User.id).filter(User.telegram_id == tid).first()
+        if not exists:
+            await update.message.reply_text(T.ADMIN_BC_USER_NOT_FOUND)
+            return True
+        st.set_state(tg.id, waiting="admin_bc_msg", admin_bc_target=tid)
+        await update.message.reply_text(T.ADMIN_BC_ASK_MSG_ONE.format(tid=tid))
+        return True
+
+    if waiting == "admin_bc_msg":
+        return await _confirm_broadcast_message(update, context)
 
     if waiting == "admin_ch_add":
         province = state.get("admin_ch_province")
@@ -278,4 +493,373 @@ async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
         await update.message.reply_text(msg, reply_markup=kb.admin_home_keyboard())
         return True
 
+    if waiting == "admin_mod_ban_reason":
+        hours = state.get("admin_mod_ban_hours")
+        report_id = state.get("admin_mod_report_id")
+        target_user_id = state.get("admin_mod_user_id")
+        reason = None if text in ("بدون دلیل", "-", "—") else text
+        st.set_state(
+            tg.id,
+            waiting=None,
+            admin_mod_ban_hours=None,
+            admin_mod_report_id=None,
+            admin_mod_user_id=None,
+        )
+        if report_id is not None:
+            await _apply_ban_from_report(
+                context,
+                admin_tg=tg.id,
+                report_id=int(report_id),
+                hours=hours,
+                reason=reason,
+                reply_to=update.message,
+            )
+            return True
+        if target_user_id is not None:
+            await _apply_ban_to_user(
+                context,
+                admin_tg=tg.id,
+                user_id=int(target_user_id),
+                hours=hours,
+                reason=reason,
+                reply_to=update.message,
+            )
+            return True
+        await update.message.reply_text(T.ERROR_GENERIC, reply_markup=kb.admin_home_keyboard())
+        return True
+
+    if waiting == "admin_user_search":
+        q = text.strip()
+        with get_session() as session:
+            rows = search_svc.admin_search_users(session, q, limit=20)
+            if not rows:
+                await update.message.reply_text(
+                    T.ADMIN_USER_SEARCH_EMPTY, reply_markup=kb.admin_home_keyboard()
+                )
+                return True
+            lines = []
+            ids = []
+            for u in rows:
+                ids.append(u.id)
+                uname = f"@{u.username}" if u.username else "—"
+                lines.append(
+                    f"{online_emoji(u.last_active_at)} #{u.id} tg:`{u.telegram_id}` {uname}\n"
+                    f"   {u.display_name or '—'} · {u.city or '—'} · {u.province or '—'}\n"
+                    f"   {format_last_seen(u.last_active_at)} · ❤️ {int(u.likes_count or 0)}"
+                )
+            body = T.ADMIN_USER_SEARCH_HEADER.format(n=len(rows), list="\n".join(lines))
+            markup = kb.admin_user_search_results_keyboard(ids)
+        st.set_state(tg.id, waiting=None)
+        try:
+            await update.message.reply_text(body, reply_markup=markup, parse_mode="Markdown")
+        except Exception:
+            await update.message.reply_text(body.replace("`", ""), reply_markup=markup)
+        return True
+
     return False
+
+
+_BAN_HOURS = {
+    "1h": 1,
+    "6h": 6,
+    "24h": 24,
+    "7d": 24 * 7,
+    "30d": 24 * 30,
+    "perm": None,
+}
+
+
+async def _moderation_callbacks(query, context, tg, data: str) -> None:
+    if data == "admin:mod":
+        with get_session() as session:
+            open_n = mod_svc.count_open_reports(session)
+            ban_n = len(mod_svc.list_active_restrictions(session))
+        await query.edit_message_text(
+            T.ADMIN_MOD_HOME.format(open_n=open_n, ban_n=ban_n),
+            reply_markup=kb.admin_mod_home_keyboard(),
+        )
+        return
+
+    if data == "admin:mod:open":
+        await _show_mod_reports(query)
+        return
+
+    if data == "admin:mod:bans":
+        await _show_mod_bans(query)
+        return
+
+    if data.startswith("admin:mod:r:"):
+        rid = int(data.split(":")[3])
+        with get_session() as session:
+            rep = mod_svc.get_report(session, rid)
+            if not rep:
+                await query.edit_message_text(
+                    T.ADMIN_MOD_EMPTY_REPORTS, reply_markup=kb.admin_mod_home_keyboard()
+                )
+                return
+            body = mod_svc.format_report_detail(session, rep)
+        try:
+            await query.edit_message_text(
+                body,
+                reply_markup=kb.admin_mod_report_actions_keyboard(rid),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await query.edit_message_text(
+                body.replace("`", ""),
+                reply_markup=kb.admin_mod_report_actions_keyboard(rid),
+            )
+        return
+
+    if data.startswith("admin:mod:dismiss:"):
+        rid = int(data.split(":")[3])
+        with get_session() as session:
+            rep = mod_svc.get_report(session, rid)
+            if rep:
+                mod_svc.set_report_status(session, rep, "dismissed", admin_tg=tg.id)
+        await query.edit_message_text(
+            T.ADMIN_MOD_DISMISSED, reply_markup=kb.admin_mod_home_keyboard()
+        )
+        return
+
+    if data.startswith("admin:mod:ban:"):
+        parts = data.split(":")
+        rid = int(parts[3])
+        preset = parts[4] if len(parts) > 4 else "24h"
+        hours = _BAN_HOURS.get(preset, 24)
+        st.set_state(
+            tg.id,
+            mode="admin",
+            waiting="admin_mod_ban_reason",
+            admin_mod_report_id=rid,
+            admin_mod_ban_hours=hours,
+        )
+        await query.edit_message_text(T.ADMIN_MOD_ASK_REASON)
+        return
+
+    if data.startswith("admin:mod:lift:"):
+        rid = int(data.split(":")[3])
+        with get_session() as session:
+            mod_svc.lift_restriction(session, rid)
+        await query.edit_message_text(T.ADMIN_MOD_LIFTED, reply_markup=kb.admin_mod_home_keyboard())
+        return
+
+    if data.startswith("admin:mod:b:"):
+        await _show_mod_bans(query)
+        return
+
+
+async def _show_mod_reports(query) -> None:
+    with get_session() as session:
+        reports = mod_svc.list_open_reports(session, limit=20)
+        if not reports:
+            await query.edit_message_text(
+                T.ADMIN_MOD_EMPTY_REPORTS, reply_markup=kb.admin_mod_home_keyboard()
+            )
+            return
+        lines = []
+        for r in reports:
+            reported = r.reported
+            tg_id = reported.telegram_id if reported else "?"
+            lines.append(
+                f"#{r.id} → tg:{tg_id} · {mod_svc.reason_label(r.reason_code)}"
+            )
+        body = T.ADMIN_MOD_REPORTS_HEADER.format(n=len(reports), list="\n".join(lines))
+        markup = kb.admin_mod_reports_keyboard(reports)
+    await query.edit_message_text(body, reply_markup=markup)
+
+
+async def _show_mod_bans(query) -> None:
+    with get_session() as session:
+        rows = mod_svc.list_active_restrictions(session, limit=30)
+        if not rows:
+            await query.edit_message_text(
+                T.ADMIN_MOD_EMPTY_BANS, reply_markup=kb.admin_mod_home_keyboard()
+            )
+            return
+        lines = []
+        buttons: list[tuple[int, str]] = []
+        for row in rows:
+            user = session.get(User, row.user_id)
+            lines.append(mod_svc.format_restriction_line(row, user))
+            label = f"#{row.id} tg:{user.telegram_id if user else '?'}"
+            buttons.append((row.id, label))
+        body = T.ADMIN_MOD_BANS_HEADER.format(n=len(rows), list="\n".join(lines))
+        markup = kb.admin_mod_bans_keyboard(buttons)
+    try:
+        await query.edit_message_text(body, reply_markup=markup, parse_mode="Markdown")
+    except Exception:
+        await query.edit_message_text(body.replace("`", ""), reply_markup=markup)
+
+
+async def _apply_ban_from_report(
+    context,
+    *,
+    admin_tg: int,
+    report_id: int,
+    hours: int | None,
+    reason: str | None,
+    reply_to=None,
+) -> None:
+    notify_tg = None
+    detail = ""
+    with get_session() as session:
+        rep = mod_svc.get_report(session, report_id)
+        if not rep:
+            if reply_to:
+                await reply_to.reply_text(T.ERROR_GENERIC, reply_markup=kb.admin_home_keyboard())
+            return
+        user = session.get(User, rep.reported_id)
+        if not user:
+            if reply_to:
+                await reply_to.reply_text(T.ERROR_GENERIC, reply_markup=kb.admin_home_keyboard())
+            return
+        ban_reason = reason or mod_svc.reason_label(rep.reason_code)
+        mod_svc.apply_restriction(
+            session,
+            user,
+            hours=hours,
+            reason=ban_reason,
+            admin_tg=admin_tg,
+            report_id=report_id,
+        )
+        matchmaker.cancel(session, user)
+        game = game_engine.active_session_for_user(session, user)
+        if game and game.status in ("playing", "guessing"):
+            players = game_engine.get_players(session, game)
+            game_engine.finish_game(session, game)
+            for p in players:
+                try:
+                    peer = p.user.telegram_id if p.user else None
+                    if peer:
+                        await context.bot.send_message(
+                            peer,
+                            T.GAME_ENDED_BY_USER,
+                            reply_markup=kb.main_menu(),
+                        )
+                except Exception:
+                    pass
+        notify_tg = user.telegram_id
+        detail = mod_svc.restriction_message(session, user) or ""
+
+    if reply_to:
+        await reply_to.reply_text(T.ADMIN_MOD_RESTRICTED, reply_markup=kb.admin_home_keyboard())
+    if notify_tg:
+        try:
+            await context.bot.send_message(
+                notify_tg,
+                T.ADMIN_MOD_USER_NOTIFIED.format(detail=detail),
+                reply_markup=kb.main_menu(),
+            )
+        except Exception:
+            pass
+
+
+async def _user_search_callbacks(query, context, tg, data: str) -> None:
+    if data == "admin:usearch":
+        st.set_state(tg.id, mode="admin", waiting="admin_user_search")
+        await query.edit_message_text(T.ADMIN_USER_SEARCH_ASK)
+        return
+
+    if data.startswith("admin:usearch:u:"):
+        uid = int(data.split(":")[3])
+        with get_session() as session:
+            user = session.get(User, uid)
+            if not user:
+                await query.edit_message_text(
+                    T.ADMIN_USER_SEARCH_EMPTY, reply_markup=kb.admin_home_keyboard()
+                )
+                return
+            uname = f"@{user.username}" if user.username else "—"
+            body = (
+                f"{online_emoji(user.last_active_at)} کاربر #{user.id}\n"
+                f"tg: `{user.telegram_id}` {uname}\n"
+                f"نام: {user.display_name or '—'}\n"
+                f"لقب: {user.nickname or '—'}\n"
+                f"جنسیت: {user.gender or '—'}\n"
+                f"سن: {user.age or '—'}\n"
+                f"استان: {user.province or '—'}\n"
+                f"شهر: {user.city or '—'}\n"
+                f"❤️ لایک: {int(user.likes_count or 0)}\n"
+                f"{format_last_seen(user.last_active_at)}\n"
+                f"گزارش‌ها علیه: {mod_svc.count_reports_against(session, user.id)}"
+            )
+            markup = kb.admin_user_detail_keyboard(user.id)
+        try:
+            await query.edit_message_text(body, reply_markup=markup, parse_mode="Markdown")
+        except Exception:
+            await query.edit_message_text(body.replace("`", ""), reply_markup=markup)
+        return
+
+    if data.startswith("admin:usearch:ban:"):
+        parts = data.split(":")
+        uid = int(parts[3])
+        preset = parts[4] if len(parts) > 4 else "24h"
+        hours = _BAN_HOURS.get(preset, 24)
+        st.set_state(
+            tg.id,
+            mode="admin",
+            waiting="admin_mod_ban_reason",
+            admin_mod_user_id=uid,
+            admin_mod_report_id=None,
+            admin_mod_ban_hours=hours,
+        )
+        await query.edit_message_text(T.ADMIN_MOD_ASK_REASON)
+        return
+
+
+async def _apply_ban_to_user(
+    context,
+    *,
+    admin_tg: int,
+    user_id: int,
+    hours: int | None,
+    reason: str | None,
+    reply_to=None,
+) -> None:
+    notify_tg = None
+    detail = ""
+    with get_session() as session:
+        user = session.get(User, user_id)
+        if not user:
+            if reply_to:
+                await reply_to.reply_text(T.ERROR_GENERIC, reply_markup=kb.admin_home_keyboard())
+            return
+        mod_svc.apply_restriction(
+            session,
+            user,
+            hours=hours,
+            reason=(reason or "محدودیت ادمین").strip(),
+            admin_tg=admin_tg,
+            report_id=None,
+        )
+        matchmaker.cancel(session, user)
+        game = game_engine.active_session_for_user(session, user)
+        if game and game.status in ("playing", "guessing"):
+            players = game_engine.get_players(session, game)
+            game_engine.finish_game(session, game)
+            for p in players:
+                try:
+                    peer = p.user.telegram_id if p.user else None
+                    if peer:
+                        await context.bot.send_message(
+                            peer,
+                            T.GAME_ENDED_BY_USER,
+                            reply_markup=kb.main_menu(),
+                        )
+                except Exception:
+                    pass
+        notify_tg = user.telegram_id
+        detail = mod_svc.restriction_message(session, user) or ""
+
+    if reply_to:
+        await reply_to.reply_text(T.ADMIN_MOD_RESTRICTED, reply_markup=kb.admin_home_keyboard())
+    if notify_tg:
+        try:
+            await context.bot.send_message(
+                notify_tg,
+                T.ADMIN_MOD_USER_NOTIFIED.format(detail=detail),
+                reply_markup=kb.main_menu(),
+            )
+        except Exception:
+            pass

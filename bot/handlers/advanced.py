@@ -12,7 +12,6 @@ from bot.provinces import PROVINCES
 from bot.services import game_engine
 from bot.services import search as search_svc
 from bot.services import users as user_svc
-from bot.services.glass_msg import show_td_glass, upsert_hub
 from bot.texts import fa as T
 
 
@@ -200,7 +199,23 @@ async def advanced_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data.startswith("adv_play:"):
         await query.answer()
         target_id = int(data.split(":")[1])
-        await _start_game_with(query, context, tg, target_id)
+        from bot.handlers import play_invite
+
+        async def _notify(text: str) -> None:
+            try:
+                await query.edit_message_text(text)
+            except Exception:
+                try:
+                    await query.edit_message_caption(caption=text)
+                except Exception:
+                    try:
+                        await context.bot.send_message(tg.id, text)
+                    except Exception:
+                        pass
+
+        await play_invite.send_play_invite(
+            context, from_tg=tg, to_user_id=target_id, notify=_notify
+        )
         return
 
 
@@ -224,9 +239,20 @@ async def _show_results(query, context, tg, prefs, page: int) -> None:
         st.set_state(tg.id, adv={**prefs, "result_ids": ids})
 
         summary = search_svc.filters_summary(prefs)
+        gender = prefs.get("gender")
+        provs = prefs.get("provinces") or []
+        g_word = "پسر" if gender == "male" else "دختر" if gender == "female" else ""
+        inline_q = f"{g_word} {provs[0]}".strip() if len(provs) == 1 else g_word or "جستجو"
+        inline_row = [
+            InlineKeyboardButton(
+                T.BTN_ADV_INLINE_LIST,
+                switch_inline_query_current_chat=inline_q,
+            )
+        ]
         if not ids:
             markup = InlineKeyboardMarkup(
                 [
+                    inline_row,
                     [InlineKeyboardButton(T.BTN_NEW_SEARCH, callback_data="adv_research")],
                     [InlineKeyboardButton(T.BTN_WAIT_QUEUE, callback_data="adv_queue")],
                 ]
@@ -240,18 +266,23 @@ async def _show_results(query, context, tg, prefs, page: int) -> None:
         start = page * 5
         page_ids = ids[start : start + 5]
         lines = []
-        button_rows = []
+        button_rows = [inline_row]
         for n, uid in enumerate(page_ids, start + 1):
             u = session.get(User, uid)
             if not u:
                 continue
             place = u.province or u.city or "—"
             name = user_svc.public_name(u)
-            lines.append(f"{n}. {name} — {u.age or '؟'} ساله — {place}")
+            from bot.services.presence import presence_badge, presence_label
+
+            in_game = bool(game_engine.active_session_for_user(session, u))
+            dot = presence_badge(last_active_at=u.last_active_at, in_game=in_game)
+            status = presence_label(last_active_at=u.last_active_at, in_game=in_game)
+            lines.append(f"{n}. {dot} {name} — {u.age or '؟'} ساله — {place}\n   {status}")
             button_rows.append(
                 [
                     InlineKeyboardButton(
-                        f"🎮 بازی با {name}"[:60],
+                        f"{dot} 🎮 دعوت {name}"[:60],
                         callback_data=f"adv_play:{uid}",
                     )
                 ]
@@ -307,83 +338,3 @@ async def _enqueue_from_prefs(query, context, tg, prefs) -> None:
         queue_mode="advanced",
         edit_message=query.message,
     )
-
-
-async def _start_game_with(query, context, tg, target_user_id: int) -> None:
-    with get_session() as session:
-        me = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
-        other = session.get(User, target_user_id)
-        if not other:
-            await query.edit_message_text("این کاربر پیدا نشد.")
-            return
-        game = game_engine.create_session(session, "stranger", starter=me)
-        game_engine.add_player(session, game, me)
-        game_engine.add_player(session, game, other)
-        rnd = game_engine.start_two_player(session, game)
-        st.clear(tg.id)
-        me_name = user_svc.public_name(me)
-        other_name = user_svc.public_name(other)
-        me_chooser = rnd.chooser_user_id == me.id
-        turn = T.CHOOSE_TRUTH_OR_DARE.format(
-            chooser=me_name if me_chooser else other_name,
-            target=other_name if me_chooser else me_name,
-        )
-        if rnd:
-            turn = f"{T.ROUND_INFO.format(n=game.round_number, max=game.max_rounds)}\n{turn}"
-        game_id = game.id
-        chooser_uid = rnd.chooser_user_id
-        me_tg, other_tg = me.telegram_id, other.telegram_id
-        me_body = f"🎮 بازی با {other_name} شروع شد!"
-        other_body = f"🎮 {me_name} تو رو به جرئت حقیقت دعوت کرد!"
-        me_hub = (
-            T.MATCH_HUB.format(match_body=me_body)
-            if me_chooser
-            else T.MATCH_START_WAITER.format(match_body=me_body, turn=turn)
-        )
-        other_hub = (
-            T.MATCH_START_WAITER.format(match_body=other_body, turn=turn)
-            if me_chooser
-            else T.MATCH_HUB.format(match_body=other_body)
-        )
-
-    await query.edit_message_text(me_body)
-    try:
-        mid = await upsert_hub(
-            context.bot,
-            me_tg,
-            me_hub,
-            reply_kb=kb.in_game_menu(is_chooser=me_chooser),
-            replace_keyboard=True,
-        )
-        glass_id = None
-        if me_chooser:
-            glass_id = await show_td_glass(
-                context.bot,
-                me_tg,
-                session_id=game_id,
-                chooser_id=chooser_uid,
-                turn_text=turn,
-            )
-        st.set_state(me_tg, game_hub_message_id=mid, game_glass_message_id=glass_id)
-    except Exception:
-        pass
-    try:
-        mid = await upsert_hub(
-            context.bot,
-            other_tg,
-            other_hub,
-            reply_kb=kb.in_game_menu(is_chooser=not me_chooser),
-            replace_keyboard=True,
-        )
-        glass_id = None
-        if not me_chooser:
-            glass_id = await show_td_glass(
-                context.bot,
-                other_tg,
-                session_id=game_id,
-                chooser_id=chooser_uid,
-                turn_text=turn,
-            )
-        st.set_state(other_tg, game_hub_message_id=mid, game_glass_message_id=glass_id)
-    except Exception:
-        pass

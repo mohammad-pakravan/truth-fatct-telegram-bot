@@ -15,7 +15,7 @@ def create_session(
     game_type: str,
     starter: Optional[User] = None,
     chat_id: Optional[int] = None,
-    max_rounds: int = 5,
+    max_rounds: int = 10,
     inline_message_id: Optional[str] = None,
 ) -> GameSession:
     gs = GameSession(
@@ -164,24 +164,57 @@ def start_group_rotation(session: Session, game: GameSession) -> Round:
 
 
 def apply_choice(
-    session: Session, rnd: Round, choice: str, prompt: Optional[str] = None
+    session: Session,
+    rnd: Round,
+    choice: str,
+    prompt: Optional[str] = None,
+    *,
+    media_type: Optional[str] = None,
+    file_id: Optional[str] = None,
 ) -> str:
-    """Set truth/dare. If prompt is omitted, pick a random bank prompt."""
+    """Set truth/dare. If prompt/media omitted, pick a random bank prompt."""
     rnd.choice = choice
-    text = (prompt or "").strip() or random_prompt(choice)  # type: ignore[arg-type]
-    rnd.prompt_text = text
-    return text
+    text = (prompt or "").strip()
+    if not text and not file_id:
+        text = random_prompt(choice)  # type: ignore[arg-type]
+    rnd.prompt_text = text or None
+    rnd.prompt_media_type = media_type if file_id else None
+    rnd.prompt_file_id = file_id
+    if text:
+        return text
+    labels = {
+        "photo": "📷 عکس",
+        "voice": "🎤 ویس",
+        "video": "🎥 ویدیو",
+        "video_note": "🎬 ویدیوی دایره‌ای",
+    }
+    return labels.get(media_type or "", "مدیا")
 
 
 def set_pending_choice(session: Session, rnd: Round, choice: str) -> None:
     """Chooser picked truth/dare; waiting for their custom question text."""
     rnd.choice = choice
     rnd.prompt_text = None
+    rnd.prompt_media_type = None
+    rnd.prompt_file_id = None
 
 
-def submit_answer(session: Session, rnd: Round, text: Optional[str]) -> None:
+def submit_answer(
+    session: Session,
+    rnd: Round,
+    text: Optional[str],
+    *,
+    media_type: Optional[str] = None,
+    file_id: Optional[str] = None,
+) -> None:
     rnd.answer_text = text
-    rnd.status = "answered" if text else "skipped"
+    rnd.answer_media_type = media_type if file_id else None
+    rnd.answer_file_id = file_id
+    rnd.status = "answered" if (text or file_id) else "skipped"
+
+
+def round_has_prompt(rnd: Round) -> bool:
+    return bool((rnd.prompt_text and rnd.prompt_text.strip()) or rnd.prompt_file_id)
 
 
 def advance_round(session: Session, game: GameSession) -> Optional[Round]:

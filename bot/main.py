@@ -37,12 +37,14 @@ from bot.handlers import (
     inline_mode,
     membership,
     menu,
+    play_invite,
     profile,
     start,
     stranger,
     wizard,
 )
 from bot.services import fake_identity as fake_svc
+from bot.services import placeholders as ph_svc
 from bot.services import storage
 from bot.texts import fa as T
 from bot import state as st
@@ -57,7 +59,9 @@ logger = logging.getLogger(__name__)
 _OPEN_WITHOUT_PROFILE = {
     T.BTN_HELP,
     T.BTN_CONTACT,
+    T.BTN_HUB_PLAY,  # hub itself; modes inside gate via their open_* handlers
     T.BTN_HUB_PROFILE,
+    T.BTN_HUB_FRIENDS,
     T.BTN_PROFILE,
     T.BTN_HISTORY,
     T.BTN_SHOW_PROFILE,
@@ -82,20 +86,32 @@ async def on_menu_buttons(update, context):
     if await stranger.leave_queue(update, context):
         return
 
+    # Hub submenus first (mode-scoped)
+    if await menu.hub_play_text(update, context):
+        return
+    if await menu.hub_profile_text(update, context):
+        return
+    if await menu.hub_friends_text(update, context):
+        return
+
     mapping = {
-        T.BTN_STRANGER: stranger.open_stranger,
+        T.BTN_HUB_PLAY: menu.open_hub_play,
         T.BTN_ADVANCED: advanced.open_advanced,
-        T.BTN_NEARBY: stranger.open_nearby,
-        T.BTN_ANON: stranger.open_anonymous,
         T.BTN_HUB_PROFILE: menu.open_hub_profile,
         T.BTN_HUB_FRIENDS: menu.open_hub_friends,
         T.BTN_HELP: menu.open_help,
         T.BTN_CONTACT: menu.open_contact,
+        # Legacy direct entries (old keyboards)
+        T.BTN_STRANGER: stranger.open_stranger,
+        T.BTN_PLAY_NORMAL: stranger.open_stranger,
+        T.BTN_NEARBY: stranger.open_nearby,
+        T.BTN_ANON: stranger.open_anonymous,
+        T.BTN_FAKE: fake.open_fake,
         T.BTN_FRIENDS: friends.open_friends,
+        T.BTN_PLAY_FRIEND_LINK: friends.open_friends,
         T.BTN_GROUP_CHANNEL: group.open_group_channel,
         T.BTN_PROFILE: profile.open_profile,
         T.BTN_HISTORY: history.open_history,
-        T.BTN_FAKE: fake.open_fake,
         T.BTN_COMPLETE_PROFILE: lambda u, c: wizard.start_wizard(u, c, force=True),
         T.BTN_RUN_WIZARD: lambda u, c: wizard.start_wizard(u, c, force=True),
     }
@@ -115,7 +131,9 @@ async def on_menu_buttons(update, context):
         if mode == "profile":
             await profile.profile_text(update, context)
             return
-        if mode in ("hub_profile", "hub_friends"):
+        if mode in ("hub_profile", "hub_friends", "hub_play"):
+            if await menu.hub_play_text(update, context):
+                return
             if await menu.hub_profile_text(update, context):
                 return
             if await menu.hub_friends_text(update, context):
@@ -126,23 +144,37 @@ async def on_menu_buttons(update, context):
     if await gameplay.game_menu_text(update, context):
         return
 
+    if await gameplay.report_other_text(update, context):
+        return
+
     if await gameplay.custom_prompt_text(update, context):
         return
 
-    if await menu.hub_profile_text(update, context):
+    if await gameplay.answer_text(update, context):
         return
-    if await menu.hub_friends_text(update, context):
+
+    if await gameplay.relay_private_chat(update, context):
         return
 
     await profile.profile_text(update, context)
     await friends.friends_text(update, context)
     await channel.channel_text(update, context)
     await channel.discussion_comment(update, context)
-    await gameplay.answer_text(update, context)
 
 
 async def on_photo(update, context):
+    if await admin.admin_media(update, context):
+        return
     if await wizard.wizard_photo(update, context):
+        return
+    if await gameplay.on_game_media(update, context):
+        return
+
+
+async def on_voice_or_video(update, context):
+    if await admin.admin_media(update, context):
+        return
+    if await gameplay.on_game_media(update, context):
         return
 
 
@@ -178,6 +210,10 @@ async def post_init(app: Application) -> None:
         n = fake_svc.seed_from_json(session)
         if n:
             logger.info("Seeded %s fake identities", n)
+    try:
+        await ph_svc.ensure_placeholder_file_ids(app.bot)
+    except Exception:
+        logger.exception("Placeholder upload failed (inline thumbs may miss gender defaults)")
     if app.job_queue:
         app.job_queue.run_repeating(
             match_queue_job,
@@ -236,6 +272,10 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CallbackQueryHandler(wizard.wizard_callbacks, pattern=r"^(wiz_prov:|wiz_gender:)"))
     app.add_handler(CallbackQueryHandler(membership.membership_callbacks, pattern=r"^mem_"))
     app.add_handler(CallbackQueryHandler(admin.admin_callbacks, pattern=r"^admin:"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_user_report, pattern=r"^ureport:"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_post_game_action, pattern=r"^pgact:"))
+    app.add_handler(CallbackQueryHandler(menu.contacts_callbacks, pattern=r"^contact:"))
+    app.add_handler(CallbackQueryHandler(menu.hub_friends_callbacks, pattern=r"^hubf:"))
     app.add_handler(CallbackQueryHandler(group.gc_help_callback, pattern=r"^gc:"))
     app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:)"))
     app.add_handler(CallbackQueryHandler(gameplay.on_truth_dare, pattern=r"^td:"))
@@ -248,6 +288,7 @@ def build_app(token: str | None = None) -> Application:
             pattern=r"^(str_city:|pref_gender:|age_from:|age_to:|str_id:|str_allow:|str_cancel$)",
         )
     )
+    app.add_handler(CallbackQueryHandler(play_invite.on_invite_callback, pattern=r"^invite:"))
     app.add_handler(
         CallbackQueryHandler(
             advanced.advanced_callbacks,
@@ -265,6 +306,9 @@ def build_app(token: str | None = None) -> Application:
     )
 
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
+    app.add_handler(
+        MessageHandler(filters.VOICE | filters.VIDEO | filters.VIDEO_NOTE, on_voice_or_video)
+    )
     app.add_handler(MessageHandler(filters.LOCATION, on_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_menu_buttons))
 
