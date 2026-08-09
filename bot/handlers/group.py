@@ -78,7 +78,7 @@ async def group_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         await update.message.reply_text(
             "این دستور رو داخل گروه بزن.\n\n" + T.GROUP_INTRO.format(bot=mention),
-            reply_markup=main_menu(),
+            reply_markup=main_menu(update.effective_user.id),
         )
         return
 

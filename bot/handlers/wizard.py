@@ -120,7 +120,7 @@ async def wizard_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
 
     if text == T.BTN_CANCEL:
         st.clear(tg.id)
-        await update.message.reply_text(T.WIZARD_CANCELLED, reply_markup=main_menu())
+        await update.message.reply_text(T.WIZARD_CANCELLED, reply_markup=main_menu(tg.id))
         return True
 
     if step == "name":

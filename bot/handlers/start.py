@@ -33,7 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if not complete:
                 await update.message.reply_text(
                     T.WELCOME.format(name=first),
-                    reply_markup=main_menu(),
+                    reply_markup=main_menu(tg.id),
                 )
                 await wizard.start_wizard(
                     update, context, feature="دعوت دوست"
@@ -47,7 +47,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
     st.clear(tg.id)
-    await update.message.reply_text(T.WELCOME.format(name=first), reply_markup=main_menu())
+    await update.message.reply_text(T.WELCOME.format(name=first), reply_markup=main_menu(tg.id))
 
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -56,4 +56,6 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     text = update.message.text.strip()
     if text == T.BTN_BACK:
         st.clear(update.effective_user.id)
-        await update.message.reply_text(T.MAIN_MENU_TITLE, reply_markup=main_menu())
+        await update.message.reply_text(
+            T.MAIN_MENU_TITLE, reply_markup=main_menu(update.effective_user.id)
+        )

@@ -3,15 +3,28 @@
 from bot.texts import fa as T
 
 
-def main_menu() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton(T.BTN_HUB_PLAY)],
-            [KeyboardButton(T.BTN_HUB_FRIENDS), KeyboardButton(T.BTN_ADVANCED)],
-            [KeyboardButton(T.BTN_HUB_PROFILE), KeyboardButton(T.BTN_HELP)],
-        ],
-        resize_keyboard=True,
-    )
+def main_menu(telegram_id: int | None = None, *, is_admin: bool | None = None) -> ReplyKeyboardMarkup:
+    """Main reply keyboard. Admins get an extra «پنل ادمین» row."""
+    show_admin = is_admin
+    if show_admin is None and telegram_id is not None:
+        try:
+            from bot.db import get_session
+            from bot.services import admins as admin_svc
+
+            with get_session() as session:
+                show_admin = admin_svc.is_admin(session, int(telegram_id))
+        except Exception:
+            show_admin = False
+    show_admin = bool(show_admin)
+
+    rows = [
+        [KeyboardButton(T.BTN_HUB_PLAY)],
+        [KeyboardButton(T.BTN_HUB_FRIENDS), KeyboardButton(T.BTN_ADVANCED)],
+        [KeyboardButton(T.BTN_HUB_PROFILE), KeyboardButton(T.BTN_HELP)],
+    ]
+    if show_admin:
+        rows.append([KeyboardButton(T.BTN_ADMIN)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
 def hub_play_menu() -> ReplyKeyboardMarkup:

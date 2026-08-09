@@ -34,7 +34,7 @@ async def open_stranger(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         if not user_svc.profile_complete(user):
-            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
+            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu(tg.id))
             return
         if await _guard_active_game(update, context, session, user):
             return
@@ -56,7 +56,7 @@ async def open_nearby(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         if not user_svc.profile_complete(user):
-            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
+            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu(tg.id))
             return
         if await _guard_active_game(update, context, session, user):
             return
@@ -92,7 +92,7 @@ async def nearby_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     await update.message.reply_text(
         "شعاع رو از دکمه‌های بالا انتخاب کن 👆",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(tg.id),
     )
     return True
 
@@ -147,7 +147,7 @@ async def open_anonymous(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         if not user_svc.profile_complete(user):
-            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
+            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu(tg.id))
             return
         if await _guard_active_game(update, context, session, user):
             return
@@ -179,7 +179,7 @@ async def leave_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
 
     if text == T.BTN_CANCEL and st.get(tg.id).get("mode") == "nearby":
         st.clear(tg.id)
-        await update.message.reply_text(T.LEFT_QUEUE, reply_markup=main_menu())
+        await update.message.reply_text(T.LEFT_QUEUE, reply_markup=main_menu(tg.id))
         return True
 
     # Accept emoji / non-emoji variants (Telegram clients sometimes strip)
@@ -193,7 +193,7 @@ async def leave_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
     # Always give visible feedback + restore main menu
     await update.message.reply_text(
         T.LEFT_QUEUE if ok else T.NOT_IN_QUEUE,
-        reply_markup=main_menu(),
+        reply_markup=main_menu(tg.id),
     )
     return True
 
@@ -214,7 +214,7 @@ async def stranger_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         st.clear(tg.id)
         await query.edit_message_text(T.LEFT_QUEUE if ok else T.NOT_IN_QUEUE)
         try:
-            await context.bot.send_message(tg.id, T.MAIN_MENU_TITLE, reply_markup=main_menu())
+            await context.bot.send_message(tg.id, T.MAIN_MENU_TITLE, reply_markup=main_menu(tg.id))
         except Exception:
             pass
         return
@@ -315,5 +315,5 @@ async def cancel_match_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     st.clear(update.effective_user.id)
     await update.message.reply_text(
         T.LEFT_QUEUE if ok else T.NOT_IN_QUEUE,
-        reply_markup=main_menu(),
+        reply_markup=main_menu(tg.id),
     )

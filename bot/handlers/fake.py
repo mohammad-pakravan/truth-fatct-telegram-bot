@@ -225,7 +225,7 @@ async def fake_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         await context.bot.send_message(
                             p.user.telegram_id,
                             T.FINAL_BOTH_DONE.format(summary=summary),
-                            reply_markup=kb.main_menu(),
+                            reply_markup=kb.main_menu(p.user.telegram_id),
                         )
                     except Exception:
                         pass

@@ -122,4 +122,6 @@ async def send_profile_card(
         await message.reply_text(caption, reply_markup=markup)
 
     if with_main_menu and not edit_mode:
-        await message.reply_text("منوی بازی آماده‌ست 👇", reply_markup=main_menu())
+        await message.reply_text(
+            "منوی بازی آماده‌ست 👇", reply_markup=main_menu(user.telegram_id)
+        )

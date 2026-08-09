@@ -30,7 +30,7 @@ async def open_advanced(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         if not user_svc.profile_complete(user):
-            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu())
+            await update.message.reply_text(T.PROFILE_INCOMPLETE, reply_markup=main_menu(tg.id))
             return
         if game_engine.active_session_for_user(session, user):
             from bot.handlers import gameplay

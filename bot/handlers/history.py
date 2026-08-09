@@ -14,16 +14,17 @@ from bot.texts import fa as T
 async def open_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_user:
         return
+    tg = update.effective_user
     with get_session() as session:
         user = user_svc.get_or_create_user(
             session,
-            update.effective_user.id,
-            update.effective_user.username,
-            update.effective_user.full_name,
+            tg.id,
+            tg.username,
+            tg.full_name,
         )
         games = game_engine.user_recent_games(session, user, HISTORY_LIMIT)
         if not games:
-            await update.message.reply_text(T.HISTORY_EMPTY, reply_markup=main_menu())
+            await update.message.reply_text(T.HISTORY_EMPTY, reply_markup=main_menu(tg.id))
             return
 
         lines = [T.HISTORY_HEADER.format(n=len(games)), ""]
@@ -38,4 +39,4 @@ async def open_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if len(text) > 4000:
             text = text[:3990] + "\n…"
 
-        await update.message.reply_text(text, reply_markup=main_menu())
+        await update.message.reply_text(text, reply_markup=main_menu(tg.id))

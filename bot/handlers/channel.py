@@ -40,7 +40,7 @@ async def channel_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     with get_session() as session:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         if _active_channel_game(session, user.id):
-            await update.message.reply_text(T.CHANNEL_ALREADY_OPEN, reply_markup=main_menu())
+            await update.message.reply_text(T.CHANNEL_ALREADY_OPEN, reply_markup=main_menu(tg.id))
             return
 
     if chat and chat.type == ChatType.CHANNEL:
@@ -60,7 +60,7 @@ async def channel_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     bot = f"@{BOT_USERNAME}" if BOT_USERNAME else "@YourBot"
     await update.message.reply_text(
         T.CHANNEL_ID_ASK + T.CHANNEL_INTRO.format(bot=bot),
-        reply_markup=main_menu(),
+        reply_markup=main_menu(tg.id),
     )
 
 
@@ -356,7 +356,7 @@ async def _publish_channel_round(update: Update, context: ContextTypes.DEFAULT_T
         )
         _ = msg
     except Exception:
-        await update.message.reply_text(T.CHANNEL_POST_FAIL, reply_markup=main_menu())
+        await update.message.reply_text(T.CHANNEL_POST_FAIL, reply_markup=main_menu(tg.id))
 
 
 async def _cast_option_vote(query, session_id: int, round_id: int, idx: str) -> None:

@@ -59,6 +59,7 @@ logger = logging.getLogger(__name__)
 _OPEN_WITHOUT_PROFILE = {
     T.BTN_HELP,
     T.BTN_CONTACT,
+    T.BTN_ADMIN,
     T.BTN_HUB_PLAY,  # hub itself; modes inside gate via their open_* handlers
     T.BTN_HUB_PROFILE,
     T.BTN_HUB_FRIENDS,
@@ -101,6 +102,7 @@ async def on_menu_buttons(update, context):
         T.BTN_HUB_FRIENDS: menu.open_hub_friends,
         T.BTN_HELP: menu.open_help,
         T.BTN_CONTACT: menu.open_contact,
+        T.BTN_ADMIN: admin.open_admin,
         # Legacy direct entries (old keyboards)
         T.BTN_STRANGER: stranger.open_stranger,
         T.BTN_PLAY_NORMAL: stranger.open_stranger,
@@ -175,6 +177,12 @@ async def on_voice_or_video(update, context):
     if await admin.admin_media(update, context):
         return
     if await gameplay.on_game_media(update, context):
+        return
+
+
+async def on_document_or_audio(update, context):
+    """Files / audio / gif / stickers — used mainly for admin broadcast."""
+    if await admin.admin_media(update, context):
         return
 
 
@@ -308,6 +316,12 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(
         MessageHandler(filters.VOICE | filters.VIDEO | filters.VIDEO_NOTE, on_voice_or_video)
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.Document.ALL | filters.AUDIO | filters.ANIMATION | filters.Sticker.ALL,
+            on_document_or_audio,
+        )
     )
     app.add_handler(MessageHandler(filters.LOCATION, on_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_menu_buttons))

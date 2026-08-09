@@ -199,13 +199,13 @@ async def enqueue_and_maybe_match(
                             tg_id,
                             msg,
                             message_id=hub_id,
-                            reply_kb=main_menu(),
+                            reply_kb=main_menu(telegram_user.id),
                         )
                     except Exception:
                         pass
                 else:
                     await context.bot.send_message(
-                        telegram_user.id, msg, reply_markup=main_menu()
+                        telegram_user.id, msg, reply_markup=main_menu(telegram_user.id)
                     )
                 return False
 
@@ -245,13 +245,13 @@ async def enqueue_and_maybe_match(
                                 tg_id,
                                 msg,
                                 message_id=hub_id,
-                                reply_kb=main_menu(),
+                                reply_kb=main_menu(telegram_user.id),
                             )
                         except Exception:
                             pass
                     else:
                         await context.bot.send_message(
-                            telegram_user.id, msg, reply_markup=main_menu()
+                            telegram_user.id, msg, reply_markup=main_menu(telegram_user.id)
                         )
                     return False
                 if str(exc) == "match_in_progress":

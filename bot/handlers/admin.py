@@ -42,7 +42,7 @@ async def open_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     tg = update.effective_user
     with get_session() as session:
         if not _require_admin(session, tg.id):
-            await update.message.reply_text(T.ADMIN_DENIED, reply_markup=main_menu())
+            await update.message.reply_text(T.ADMIN_DENIED, reply_markup=main_menu(tg.id))
             return
     st.set_state(tg.id, mode="admin", waiting=None)
     await update.message.reply_text(T.ADMIN_HOME, reply_markup=kb.admin_home_keyboard())
@@ -350,28 +350,61 @@ async def _confirm_broadcast_message(update: Update, context: ContextTypes.DEFAU
         if not _require_admin(session, tg.id):
             return False
 
+    msg = update.message
+    # Albums: Telegram sends multiple updates; we can only copy one message_id
+    if getattr(msg, "media_group_id", None):
+        await msg.reply_text(
+            "آلبوم چندتایی پشتیبانی نمی‌شه — فقط یک عکس/فایل جدا بفرست."
+        )
+        return True
+
     target = state.get("admin_bc_target")
     user_ids = await _resolve_targets(target)
     if not user_ids:
-        await update.message.reply_text(T.ADMIN_BC_EMPTY, reply_markup=kb.admin_home_keyboard())
+        await msg.reply_text(T.ADMIN_BC_EMPTY, reply_markup=kb.admin_home_keyboard())
         st.set_state(tg.id, waiting=None, admin_bc_target=None)
         return True
 
+    kind = _broadcast_kind_label(msg)
     st.set_state(
         tg.id,
         waiting="admin_bc_confirm",
         admin_bc_from=update.effective_chat.id,
-        admin_bc_mid=update.message.message_id,
+        admin_bc_mid=msg.message_id,
     )
-    await update.message.reply_text(
-        T.ADMIN_BC_CONFIRM.format(n=len(user_ids), rate=int(BROADCAST_RATE_PER_SECOND)),
+    await msg.reply_text(
+        T.ADMIN_BC_CONFIRM.format(
+            kind=kind, n=len(user_ids), rate=int(BROADCAST_RATE_PER_SECOND)
+        ),
         reply_markup=kb.admin_broadcast_confirm_keyboard(),
     )
     return True
 
 
+def _broadcast_kind_label(message) -> str:
+    if message.photo:
+        return T.ADMIN_BC_KIND_PHOTO
+    if message.document:
+        return T.ADMIN_BC_KIND_DOCUMENT
+    if message.video:
+        return T.ADMIN_BC_KIND_VIDEO
+    if message.voice:
+        return T.ADMIN_BC_KIND_VOICE
+    if message.video_note:
+        return T.ADMIN_BC_KIND_VIDEO_NOTE
+    if message.audio:
+        return T.ADMIN_BC_KIND_AUDIO
+    if message.animation:
+        return T.ADMIN_BC_KIND_ANIMATION
+    if message.sticker:
+        return T.ADMIN_BC_KIND_STICKER
+    if message.text:
+        return T.ADMIN_BC_KIND_TEXT
+    return T.ADMIN_BC_KIND_OTHER
+
+
 async def admin_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Accept media while admin is composing a broadcast."""
+    """Accept photo / file / video / … while admin is composing a broadcast."""
     return await _confirm_broadcast_message(update, context)
 
 
@@ -735,7 +768,7 @@ async def _apply_ban_from_report(
                         await context.bot.send_message(
                             peer,
                             T.GAME_ENDED_BY_USER,
-                            reply_markup=kb.main_menu(),
+                            reply_markup=kb.main_menu(peer),
                         )
                 except Exception:
                     pass
@@ -749,7 +782,7 @@ async def _apply_ban_from_report(
             await context.bot.send_message(
                 notify_tg,
                 T.ADMIN_MOD_USER_NOTIFIED.format(detail=detail),
-                reply_markup=kb.main_menu(),
+                reply_markup=kb.main_menu(notify_tg),
             )
         except Exception:
             pass
@@ -845,7 +878,7 @@ async def _apply_ban_to_user(
                         await context.bot.send_message(
                             peer,
                             T.GAME_ENDED_BY_USER,
-                            reply_markup=kb.main_menu(),
+                            reply_markup=kb.main_menu(peer),
                         )
                 except Exception:
                     pass
@@ -859,7 +892,7 @@ async def _apply_ban_to_user(
             await context.bot.send_message(
                 notify_tg,
                 T.ADMIN_MOD_USER_NOTIFIED.format(detail=detail),
-                reply_markup=kb.main_menu(),
+                reply_markup=kb.main_menu(notify_tg),
             )
         except Exception:
             pass

@@ -7,7 +7,9 @@
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jorat_secret}
       POSTGRES_DB: ${POSTGRES_DB:-jorat}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Host port 5432 is often reserved by Windows Hyper-V; use 15432 from the host.
+      # Inside the compose network the bot still connects to db:5432.
+      - "${POSTGRES_PORT:-15432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

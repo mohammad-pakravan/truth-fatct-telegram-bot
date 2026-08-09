@@ -75,12 +75,12 @@ async def expire_invite_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
             else:
                 await context.bot.send_message(
-                    from_tg, T.INVITE_EXPIRED_FROM.format(name=to_name), reply_markup=main_menu()
+                    from_tg, T.INVITE_EXPIRED_FROM.format(name=to_name), reply_markup=main_menu(from_tg)
                 )
         except Exception:
             try:
                 await context.bot.send_message(
-                    from_tg, T.INVITE_EXPIRED_FROM.format(name=to_name), reply_markup=main_menu()
+                    from_tg, T.INVITE_EXPIRED_FROM.format(name=to_name), reply_markup=main_menu(from_tg)
                 )
             except Exception:
                 pass
@@ -93,10 +93,10 @@ async def expire_invite_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                     message_id=to_mid,
                 )
             else:
-                await context.bot.send_message(to_tg, T.INVITE_EXPIRED_TO, reply_markup=main_menu())
+                await context.bot.send_message(to_tg, T.INVITE_EXPIRED_TO, reply_markup=main_menu(to_tg))
         except Exception:
             try:
-                await context.bot.send_message(to_tg, T.INVITE_EXPIRED_TO, reply_markup=main_menu())
+                await context.bot.send_message(to_tg, T.INVITE_EXPIRED_TO, reply_markup=main_menu(to_tg))
             except Exception:
                 pass
 
@@ -176,7 +176,7 @@ async def send_play_invite(
         await context.bot.send_message(
             from_tg.id,
             "ارسال دعوت به طرف مقابل ناموفق بود.",
-            reply_markup=main_menu(),
+            reply_markup=main_menu(from_tg.id),
         )
         return
 
@@ -274,7 +274,7 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         await context.bot.send_message(
                             from_tg,
                             T.INVITE_REJECTED_FROM.format(name=to_name),
-                            reply_markup=main_menu(),
+                            reply_markup=main_menu(from_tg),
                         )
                 except Exception:
                     pass
@@ -299,7 +299,7 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text(T.INVITE_BUSY)
             if from_tg:
                 try:
-                    await context.bot.send_message(from_tg, T.INVITE_BUSY, reply_markup=main_menu())
+                    await context.bot.send_message(from_tg, T.INVITE_BUSY, reply_markup=main_menu(from_tg))
                 except Exception:
                     pass
             return

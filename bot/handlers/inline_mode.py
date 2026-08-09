@@ -504,7 +504,7 @@ async def chosen_inline_result(update: Update, context: ContextTypes.DEFAULT_TYP
             except Exception:
                 pass
         try:
-            await context.bot.send_message(tg.id, text, reply_markup=main_menu())
+            await context.bot.send_message(tg.id, text, reply_markup=main_menu(tg.id))
         except Exception:
             pass
         return

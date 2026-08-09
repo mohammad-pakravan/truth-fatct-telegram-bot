@@ -47,7 +47,7 @@ async def hub_friends_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
-        await context.bot.send_message(tg.id, T.MAIN_MENU_TITLE, reply_markup=main_menu())
+        await context.bot.send_message(tg.id, T.MAIN_MENU_TITLE, reply_markup=main_menu(tg.id))
         return
 
     if data == "hubf:link":
@@ -83,7 +83,7 @@ async def open_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text(
         T.HELP_TEXT.format(contact=contact_display()),
-        reply_markup=main_menu(),
+        reply_markup=main_menu(update.effective_user.id),
     )
 
 async def open_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -91,7 +91,7 @@ async def open_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     await update.message.reply_text(
         T.CONTACT_TEXT.format(contact=contact_display()),
-        reply_markup=main_menu(),
+        reply_markup=main_menu(update.effective_user.id),
     )
 
 
@@ -107,7 +107,7 @@ async def hub_play_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
 
     if text == T.BTN_BACK:
         st.clear(tg.id)
-        await update.message.reply_text(T.MAIN_MENU_TITLE, reply_markup=main_menu())
+        await update.message.reply_text(T.MAIN_MENU_TITLE, reply_markup=main_menu(tg.id))
         return True
 
     launchers = {
@@ -173,7 +173,7 @@ async def hub_profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if text == T.BTN_BACK:
         st.clear(tg.id)
-        await update.message.reply_text(T.MAIN_MENU_TITLE, reply_markup=main_menu())
+        await update.message.reply_text(T.MAIN_MENU_TITLE, reply_markup=main_menu(tg.id))
         return True
 
     if text == T.BTN_SHOW_PROFILE:
@@ -232,7 +232,7 @@ async def hub_friends_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if text == T.BTN_BACK:
         st.clear(tg.id)
-        await update.message.reply_text(T.MAIN_MENU_TITLE, reply_markup=main_menu())
+        await update.message.reply_text(T.MAIN_MENU_TITLE, reply_markup=main_menu(tg.id))
         return True
 
     if text in (T.BTN_FRIENDS, T.BTN_PLAY_FRIEND_LINK):

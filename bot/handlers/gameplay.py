@@ -147,7 +147,7 @@ async def _end_active_game(context, session, user, game) -> None:
             await context.bot.send_message(
                 peer_tg,
                 f"{T.GAME_ENDED_BY_USER}\n{summary}",
-                reply_markup=kb.main_menu() if status != "guessing" else None,
+                reply_markup=kb.main_menu(peer_tg) if status != "guessing" else None,
             )
             if other_uid and status != "guessing":
                 await _send_post_game_actions(context.bot, peer_tg, game_id, other_uid)
@@ -378,7 +378,7 @@ async def open_private_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         user = user_svc.get_or_create_user(session, tg.id, tg.username)
         game = game_engine.active_session_for_user(session, user)
         if not game:
-            await update.message.reply_text(T.PRIVATE_CHAT_NEED_GAME, reply_markup=kb.main_menu())
+            await update.message.reply_text(T.PRIVATE_CHAT_NEED_GAME, reply_markup=kb.main_menu(tg.id))
             return True
         peer_tg = _other_player_tg(session, game, user)
         if not peer_tg:
@@ -668,7 +668,7 @@ async def _submit_custom_prompt(
         game = game_engine.get_session(session, int(game_id))
         if not game or game.status != "playing":
             st.set_state(tg.id, wait=None, custom_prompt_game_id=None, custom_prompt_choice=None)
-            await update.message.reply_text("این بازی دیگه فعال نیست.", reply_markup=kb.main_menu())
+            await update.message.reply_text("این بازی دیگه فعال نیست.", reply_markup=kb.main_menu(tg.id))
             return True
         rnd = game_engine.get_active_round(session, game)
         if not rnd or rnd.chooser_user_id != user.id or rnd.choice != choice:
@@ -738,6 +738,7 @@ async def _submit_custom_prompt(
 async def game_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not update.message or not update.effective_user or not update.message.text:
         return False
+    tg = update.effective_user
     text = update.message.text.strip()
     if text not in {
         T.BTN_GAME_PROFILE,
@@ -762,7 +763,7 @@ async def game_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         game = game_engine.active_session_for_user(session, user)
         if not game:
-            await update.message.reply_text(T.NO_ACTIVE_GAME, reply_markup=kb.main_menu())
+            await update.message.reply_text(T.NO_ACTIVE_GAME, reply_markup=kb.main_menu(tg.id))
             return True
 
         rnd = game_engine.get_active_round(session, game)
@@ -1091,7 +1092,7 @@ async def _notify_and_advance(
                 await context.bot.send_message(
                     p.user.telegram_id,
                     T.GAME_OVER.format(summary=summary),
-                    reply_markup=kb.main_menu(),
+                    reply_markup=kb.main_menu(p.user.telegram_id),
                 )
             except Exception:
                 pass

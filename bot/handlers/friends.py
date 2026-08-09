@@ -68,7 +68,7 @@ async def friends_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     st.clear(tg.id)
     await update.message.reply_text(
         T.INVITE_CREATED.format(link=link, label=shown),
-        reply_markup=main_menu(),
+        reply_markup=main_menu(tg.id),
     )
 
 
@@ -94,7 +94,7 @@ async def accept_invite_and_notify(
 
             blocked = mod_svc.restriction_message(session, user)
             if blocked:
-                await update.message.reply_text(blocked, reply_markup=main_menu())
+                await update.message.reply_text(blocked, reply_markup=main_menu(tg.id))
                 return True
             accepted = invite_svc.accept_invite(session, user, token)
             rnd = accepted.round
@@ -123,7 +123,7 @@ async def accept_invite_and_notify(
             "busy": T.INVITE_BUSY,
             "restricted": T.RESTRICTED_PERMANENT.format(reason="یکی از طرفین محدود است"),
         }.get(code, T.INVITE_INVALID)
-        await update.message.reply_text(msg, reply_markup=main_menu())
+        await update.message.reply_text(msg, reply_markup=main_menu(tg.id))
         return True
 
     match_body = T.INVITE_ACCEPTED.format(label=label)
