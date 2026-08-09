@@ -18,9 +18,10 @@ def main_menu(telegram_id: int | None = None, *, is_admin: bool | None = None) -
     show_admin = bool(show_admin)
 
     rows = [
-        [KeyboardButton(T.BTN_HUB_PLAY)],
-        [KeyboardButton(T.BTN_HUB_FRIENDS), KeyboardButton(T.BTN_ADVANCED)],
-        [KeyboardButton(T.BTN_HUB_PROFILE), KeyboardButton(T.BTN_HELP)],
+        [KeyboardButton(T.BTN_ADVANCED)],
+        [KeyboardButton(T.BTN_ANON), KeyboardButton(T.BTN_NEARBY)],
+        [KeyboardButton(T.BTN_HUB_PROFILE)],
+        [KeyboardButton(T.BTN_HUB_FRIENDS)],
     ]
     if show_admin:
         rows.append([KeyboardButton(T.BTN_ADMIN)])
@@ -135,7 +136,8 @@ def hub_profile_menu() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton(T.BTN_SHOW_PROFILE), KeyboardButton(T.BTN_PROFILE)],
             [KeyboardButton(T.BTN_GAME_SETTINGS), KeyboardButton(T.BTN_HISTORY)],
-            [KeyboardButton(T.BTN_RUN_WIZARD), KeyboardButton(T.BTN_BACK)],
+            [KeyboardButton(T.BTN_RUN_WIZARD), KeyboardButton(T.BTN_HELP)],
+            [KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
     )
@@ -152,30 +154,17 @@ def hub_friends_menu() -> ReplyKeyboardMarkup:
 
 
 def hub_friends_inline() -> InlineKeyboardMarkup:
-    """Friends hub: invite / group + inline lists — one glass panel."""
+    """Friends hub: open chat picker with @bot game (group / private)."""
     return InlineKeyboardMarkup(
         [
             [
+                InlineKeyboardButton(
+                    T.BTN_FRIENDS_START_INLINE,
+                    switch_inline_query="game",
+                )
+            ],
+            [
                 InlineKeyboardButton(T.BTN_FRIENDS, callback_data="hubf:link"),
-                InlineKeyboardButton(T.BTN_GROUP_CHANNEL, callback_data="hubf:group"),
-            ],
-            [
-                InlineKeyboardButton(
-                    T.BTN_INLINE_FIND,
-                    switch_inline_query_current_chat="پسر تهران",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    T.BTN_INLINE_LIKES,
-                    switch_inline_query_current_chat="likes",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    T.BTN_INLINE_CONTACTS,
-                    switch_inline_query_current_chat="contacts",
-                )
             ],
             [InlineKeyboardButton(T.BTN_BACK, callback_data="hubf:back")],
         ]
@@ -429,14 +418,14 @@ def group_channel_help() -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    T.BTN_INLINE_HERE,
-                    switch_inline_query_current_chat="شروع",
+                    T.BTN_FRIENDS_START_INLINE,
+                    switch_inline_query="game",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    T.BTN_INLINE_OTHER,
-                    switch_inline_query="شروع",
+                    T.BTN_INLINE_HERE,
+                    switch_inline_query_current_chat="game",
                 )
             ],
             [InlineKeyboardButton(T.BTN_GROUP_HELP, callback_data="gc:group")],
@@ -445,11 +434,92 @@ def group_channel_help() -> InlineKeyboardMarkup:
     )
 
 
-def join_group_game(session_id: int) -> InlineKeyboardMarkup:
+def join_group_game(
+    session_id: int,
+    *,
+    sponsor_buttons: list[tuple[str, str]] | None = None,
+) -> InlineKeyboardMarkup:
+    """Lobby: optional sponsor URL rows + join/start + anon deep-link."""
+    from bot.config import BOT_USERNAME
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for label, url in sponsor_buttons or []:
+        if url:
+            rows.append([InlineKeyboardButton(f"{label} ↗️", url=url)])
+    rows.append(
+        [
+            InlineKeyboardButton(T.JOIN_GAME, callback_data=f"gjoin:{session_id}"),
+            InlineKeyboardButton(T.START_GROUP_GAME, callback_data=f"gstart:{session_id}"),
+        ]
+    )
+    if BOT_USERNAME:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    T.BTN_GROUP_ANON,
+                    url=f"https://t.me/{BOT_USERNAME}?start=anon",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+def group_question_keyboard(session_id: int, cat: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(T.JOIN_GAME, callback_data=f"gjoin:{session_id}")],
-            [InlineKeyboardButton(T.START_GROUP_GAME, callback_data=f"gstart:{session_id}")],
+            [
+                InlineKeyboardButton(
+                    T.BTN_GROUP_RESHUFFLE,
+                    callback_data=f"greshuf:{session_id}:{cat}",
+                )
+            ],
+            [
+                InlineKeyboardButton(T.BTN_GROUP_NEXT, callback_data=f"gnext:{session_id}"),
+            ],
+            [
+                InlineKeyboardButton(
+                    T.BTN_GROUP_ANSWERED,
+                    callback_data=f"gdone:{session_id}",
+                )
+            ],
+            [InlineKeyboardButton(T.BTN_GROUP_END, callback_data=f"gend:{session_id}")],
+            [
+                InlineKeyboardButton(
+                    T.BTN_GROUP_BUMP,
+                    switch_inline_query_current_chat=f"go {session_id}",
+                )
+            ],
+        ]
+    )
+
+
+def group_category_keyboard(session_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(T.CAT_TF18, callback_data=f"gcat:{session_id}:tf18"),
+                InlineKeyboardButton(T.CAT_TM18, callback_data=f"gcat:{session_id}:tm18"),
+            ],
+            [
+                InlineKeyboardButton(T.CAT_DF18, callback_data=f"gcat:{session_id}:df18"),
+                InlineKeyboardButton(T.CAT_DM18, callback_data=f"gcat:{session_id}:dm18"),
+            ],
+            [
+                InlineKeyboardButton(T.CAT_TN, callback_data=f"gcat:{session_id}:tn"),
+                InlineKeyboardButton(T.CAT_LUCKY, callback_data=f"gcat:{session_id}:lucky"),
+                InlineKeyboardButton(T.CAT_DN, callback_data=f"gcat:{session_id}:dn"),
+            ],
+            [
+                InlineKeyboardButton(T.BTN_GROUP_NEXT, callback_data=f"gnext:{session_id}"),
+                InlineKeyboardButton(T.JOIN_GAME_MID, callback_data=f"grejoin:{session_id}"),
+            ],
+            [InlineKeyboardButton(T.BTN_GROUP_END, callback_data=f"gend:{session_id}")],
+            [
+                InlineKeyboardButton(
+                    T.BTN_GROUP_BUMP,
+                    switch_inline_query_current_chat=f"go {session_id}",
+                )
+            ],
         ]
     )
 
@@ -663,9 +733,40 @@ def admin_home_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(T.ADMIN_BTN_USER_SEARCH, callback_data="admin:usearch")],
             [InlineKeyboardButton(T.ADMIN_BTN_MODERATION, callback_data="admin:mod")],
             [InlineKeyboardButton(T.ADMIN_BTN_BROADCAST, callback_data="admin:broadcast")],
+            [InlineKeyboardButton(T.ADMIN_BTN_QUESTIONS, callback_data="admin:qbank")],
             [InlineKeyboardButton(T.ADMIN_BTN_CHANNELS, callback_data="admin:channels")],
             [InlineKeyboardButton(T.ADMIN_BTN_ADMINS, callback_data="admin:admins")],
             [InlineKeyboardButton(T.ADMIN_BTN_REFRESH, callback_data="admin:home")],
+        ]
+    )
+
+
+def admin_question_bank_keyboard(counts: dict[str, int] | None = None) -> InlineKeyboardMarkup:
+    counts = counts or {}
+    from bot.services.questions import BUCKET_LABELS, BUCKETS
+
+    rows = []
+    for key in BUCKETS:
+        n = int(counts.get(key, 0) or 0)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{BUCKET_LABELS[key]} ({n})",
+                    callback_data=f"admin:qbank:b:{key}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_question_bucket_keyboard(bucket: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("➕ افزودن سوالات", callback_data=f"admin:qbank:add:{bucket}")],
+            [InlineKeyboardButton("👁 نمونه سوالات", callback_data=f"admin:qbank:list:{bucket}")],
+            [InlineKeyboardButton("🗑 پاک کردن این دسته", callback_data=f"admin:qbank:clear:{bucket}")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:qbank")],
         ]
     )
 

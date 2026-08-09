@@ -14,19 +14,28 @@ def get_or_create_user(
     username: Optional[str] = None,
     full_name: Optional[str] = None,
 ) -> User:
+    from bot.services.presence import is_online
+
     user = session.query(User).filter_by(telegram_id=telegram_id).one_or_none()
     if user:
+        was_offline = not is_online(user.last_active_at)
         if username is not None:
             user.username = username
+        # Keep Telegram account name for users who never finished onboarding
+        if full_name and not profile_complete(user):
+            user.display_name = full_name[:64]
         user.last_active_at = datetime.utcnow()
+        # Stash for callers that can send Telegram notifies
+        user._became_online = was_offline  # type: ignore[attr-defined]
         return user
 
     user = User(
         telegram_id=telegram_id,
         username=username,
-        display_name=full_name or (username or f"user_{telegram_id}"),
+        display_name=(full_name or username or f"user_{telegram_id}")[:64],
         last_active_at=datetime.utcnow(),
     )
+    user._became_online = False  # type: ignore[attr-defined]
     session.add(user)
     session.flush()
     return user

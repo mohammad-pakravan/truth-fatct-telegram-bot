@@ -137,6 +137,114 @@ def has_liked(session: Session, liker: User, liked_id: int) -> bool:
     )
 
 
+def has_contact(session: Session, owner: User, contact_id: int) -> bool:
+    return (
+        session.query(UserContact.id)
+        .filter(UserContact.owner_id == owner.id, UserContact.contact_id == contact_id)
+        .first()
+        is not None
+    )
+
+
+def is_blocked(session: Session, blocker: User, blocked_id: int) -> bool:
+    from bot.models import UserBlock
+
+    return (
+        session.query(UserBlock.id)
+        .filter(UserBlock.blocker_id == blocker.id, UserBlock.blocked_id == blocked_id)
+        .first()
+        is not None
+    )
+
+
+def either_blocked(session: Session, a: User, b: User) -> bool:
+    return is_blocked(session, a, b.id) or is_blocked(session, b, a.id)
+
+
+def toggle_block(session: Session, blocker: User, blocked: User) -> str:
+    """Returns blocked|unblocked|self."""
+    from bot.models import UserBlock
+
+    if blocker.id == blocked.id:
+        return "self"
+    row = (
+        session.query(UserBlock)
+        .filter(UserBlock.blocker_id == blocker.id, UserBlock.blocked_id == blocked.id)
+        .one_or_none()
+    )
+    if row:
+        session.delete(row)
+        session.flush()
+        return "unblocked"
+    session.add(UserBlock(blocker_id=blocker.id, blocked_id=blocked.id))
+    session.flush()
+    return "blocked"
+
+
+def has_online_notify(session: Session, watcher: User, target_id: int) -> bool:
+    from bot.models import OnlineNotify
+
+    return (
+        session.query(OnlineNotify.id)
+        .filter(OnlineNotify.watcher_id == watcher.id, OnlineNotify.target_id == target_id)
+        .first()
+        is not None
+    )
+
+
+def toggle_online_notify(session: Session, watcher: User, target: User) -> str:
+    """Returns on|off|self."""
+    from bot.models import OnlineNotify
+
+    if watcher.id == target.id:
+        return "self"
+    row = (
+        session.query(OnlineNotify)
+        .filter(OnlineNotify.watcher_id == watcher.id, OnlineNotify.target_id == target.id)
+        .one_or_none()
+    )
+    if row:
+        session.delete(row)
+        session.flush()
+        return "off"
+    session.add(OnlineNotify(watcher_id=watcher.id, target_id=target.id))
+    session.flush()
+    return "on"
+
+
+def collect_online_watchers(
+    session: Session,
+    user: User,
+    *,
+    was_offline: bool,
+) -> list[int]:
+    """
+    If user just came online, return telegram_ids of watchers to notify
+    and stamp last_notified_at.
+    """
+    if not was_offline:
+        return []
+    from bot.models import OnlineNotify, User as UserModel
+
+    rows = (
+        session.query(OnlineNotify, UserModel)
+        .join(UserModel, UserModel.id == OnlineNotify.watcher_id)
+        .filter(OnlineNotify.target_id == user.id)
+        .all()
+    )
+    now = datetime.utcnow()
+    out: list[int] = []
+    for watch, watcher in rows:
+        # Avoid spam: at most once per 30 minutes
+        if watch.last_notified_at and (now - watch.last_notified_at).total_seconds() < 1800:
+            continue
+        watch.last_notified_at = now
+        if watcher.telegram_id:
+            out.append(int(watcher.telegram_id))
+    session.flush()
+    return out
+
+
 def players_were_in_game(session: Session, game_id: int, user_a_id: int, user_b_id: int) -> bool:
     from bot.models import GamePlayer
 

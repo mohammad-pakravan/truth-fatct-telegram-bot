@@ -25,6 +25,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             username=tg.username,
             full_name=tg.full_name,
         )
+        from bot.handlers import user_profile
+
+        await user_profile.flush_online_notifies(context, session, user)
         complete = user_svc.profile_complete(user)
 
         # deep link invite — only start game if profile is ready

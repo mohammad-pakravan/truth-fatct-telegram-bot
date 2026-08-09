@@ -41,6 +41,7 @@ from bot.handlers import (
     profile,
     start,
     stranger,
+    user_profile,
     wizard,
 )
 from bot.services import fake_identity as fake_svc
@@ -82,6 +83,9 @@ async def on_menu_buttons(update, context):
         return
 
     if await admin.admin_text(update, context):
+        return
+
+    if await user_profile.uprofile_text(update, context):
         return
 
     if await stranger.leave_queue(update, context):
@@ -284,8 +288,10 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CallbackQueryHandler(gameplay.on_post_game_action, pattern=r"^pgact:"))
     app.add_handler(CallbackQueryHandler(menu.contacts_callbacks, pattern=r"^contact:"))
     app.add_handler(CallbackQueryHandler(menu.hub_friends_callbacks, pattern=r"^hubf:"))
+    app.add_handler(CallbackQueryHandler(user_profile.on_uprofile_callback, pattern=r"^up:"))
+    app.add_handler(CallbackQueryHandler(user_profile.on_upreport_callback, pattern=r"^upreport:"))
     app.add_handler(CallbackQueryHandler(group.gc_help_callback, pattern=r"^gc:"))
-    app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:)"))
+    app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:|grejoin:|gcat:|greshuf:|gdone:|gnext:|gend:)"))
     app.add_handler(CallbackQueryHandler(gameplay.on_truth_dare, pattern=r"^td:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_game_action, pattern=r"^gact:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_skip, pattern=r"^skip:"))
@@ -300,7 +306,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(
         CallbackQueryHandler(
             advanced.advanced_callbacks,
-            pattern=r"^(adv_partner:|adv_prov|adv_age:|adv_seen:|adv_sort:|adv_page:|adv_play:|adv_research$|adv_queue$)",
+            pattern=r"^(adv_partner:|adv_prov|adv_age:|adv_seen:|adv_sort:|adv_page:|adv_play:|adv_prof:|adv_research$|adv_queue$)",
         )
     )
     app.add_handler(

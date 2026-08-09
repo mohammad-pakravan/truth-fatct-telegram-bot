@@ -13,6 +13,7 @@
     profile,
     start,
     stranger,
+    user_profile,
     wizard,
 )
 
@@ -32,4 +33,5 @@ __all__ = [
     "admin",
     "membership",
     "play_invite",
+    "user_profile",
 ]

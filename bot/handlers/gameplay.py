@@ -973,6 +973,10 @@ async def _submit_answer(
             .join(GameSession, Round.session_id == GameSession.id)
             .filter(
                 GameSession.status == "playing",
+                # Group/channel have their own UIs — never scoop their rounds via DM text
+                GameSession.game_type.in_(
+                    ["friends", "stranger", "anonymous", "nearby", "fake_identity"]
+                ),
                 Round.target_user_id == user.id,
                 Round.status == "open",
                 Round.choice.isnot(None),

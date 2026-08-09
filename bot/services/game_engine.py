@@ -104,6 +104,9 @@ def display_for_player(player: GamePlayer) -> str:
         return f"{fi.name} ({fi.city})"
     if player.identity_mode in ("anonymous", "nickname"):
         return public_name(player.user, player.identity_mode, player.display_label)
+    # Casual joiners (no bot /start / incomplete profile): show account label
+    if player.display_label:
+        return player.display_label
     return public_name(player.user)
 
 
@@ -142,20 +145,58 @@ def start_two_player(session: Session, game: GameSession) -> Round:
 
 
 def start_group_rotation(session: Session, game: GameSession) -> Round:
+    """Start group play: current player answers their own question (self-turn)."""
     players = get_players(session, game)
     if len(players) < 2:
         raise ValueError("need_two")
     game.status = "playing"
     game.round_number = 1
-    chooser = players[0]
-    target = players[1]
-    game.current_turn_user_id = chooser.user_id
-    game.current_target_user_id = target.user_id
+    # High cap — game ends via اتمام بازی
+    if game.max_rounds < 50:
+        game.max_rounds = 200
+    turn = players[0]
+    game.current_turn_user_id = turn.user_id
+    game.current_target_user_id = turn.user_id
     rnd = Round(
         session_id=game.id,
         round_no=1,
-        chooser_user_id=chooser.user_id,
-        target_user_id=target.user_id,
+        chooser_user_id=turn.user_id,
+        target_user_id=turn.user_id,
+        status="open",
+    )
+    session.add(rnd)
+    session.flush()
+    return rnd
+
+
+def advance_group_self_turn(session: Session, game: GameSession) -> Optional[Round]:
+    """Close current open round (if any) and move to next player in list."""
+    players = get_players(session, game)
+    if not players:
+        return None
+    open_rnd = get_active_round(session, game)
+    if open_rnd and open_rnd.status == "open":
+        if not open_rnd.prompt_text and not open_rnd.choice:
+            open_rnd.status = "skipped"
+        elif open_rnd.status == "open":
+            open_rnd.status = "answered" if open_rnd.prompt_text else "skipped"
+
+    ids = [p.user_id for p in players]
+    cur = game.current_turn_user_id
+    if cur in ids:
+        idx = ids.index(cur)
+        next_uid = ids[(idx + 1) % len(ids)]
+    else:
+        next_uid = ids[0]
+
+    game.round_number += 1
+    game.current_turn_user_id = next_uid
+    game.current_target_user_id = next_uid
+    rnd = Round(
+        session_id=game.id,
+        round_no=game.round_number,
+        chooser_user_id=next_uid,
+        target_user_id=next_uid,
         status="open",
     )
     session.add(rnd)
@@ -176,7 +217,13 @@ def apply_choice(
     rnd.choice = choice
     text = (prompt or "").strip()
     if not text and not file_id:
-        text = random_prompt(choice)  # type: ignore[arg-type]
+        target = session.get(User, rnd.target_user_id) if rnd.target_user_id else None
+        text = random_prompt(
+            choice,  # type: ignore[arg-type]
+            gender=getattr(target, "gender", None),
+            age=getattr(target, "age", None),
+            session=session,
+        )
     rnd.prompt_text = text or None
     rnd.prompt_media_type = media_type if file_id else None
     rnd.prompt_file_id = file_id
@@ -189,6 +236,23 @@ def apply_choice(
         "video_note": "🎬 ویدیوی دایره‌ای",
     }
     return labels.get(media_type or "", "مدیا")
+
+
+def apply_category_prompt(
+    session: Session,
+    rnd: Round,
+    cat_key: str,
+) -> tuple[str, str]:
+    """Apply a group category; returns (category_label, prompt)."""
+    from bot.services.questions import prompt_for_category
+
+    kind, label, text = prompt_for_category(session, cat_key)
+    rnd.choice = kind
+    rnd.category_key = cat_key
+    rnd.prompt_text = text
+    rnd.prompt_media_type = None
+    rnd.prompt_file_id = None
+    return label, text
 
 
 def set_pending_choice(session: Session, rnd: Round, choice: str) -> None:

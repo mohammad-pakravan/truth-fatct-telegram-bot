@@ -49,7 +49,7 @@ def presence_label(
 def format_last_seen(dt: Optional[datetime], *, now: Optional[datetime] = None) -> str:
     """Human-readable last-seen / online status in Persian."""
     if not dt:
-        return "🔴 آخرین بازدید: نامشخص"
+        return "🟡 آخرین بازدید نامشخص"
     now = now or datetime.utcnow()
     secs = int((now - dt).total_seconds())
     if secs < 0:
@@ -58,11 +58,11 @@ def format_last_seen(dt: Optional[datetime], *, now: Optional[datetime] = None) 
         return "🟢 آنلاین"
     if secs < 60 * 60:
         m = max(1, secs // 60)
-        return f"🔴 آخرین بازدید: {m} دقیقه پیش"
+        return f"🟡 {m} دقیقه پیش آنلاین بوده"
     if secs < 24 * 60 * 60:
         h = max(1, secs // 3600)
-        return f"🔴 آخرین بازدید: {h} ساعت پیش"
+        return f"🟡 {h} ساعت پیش آنلاین بوده"
     if secs < 7 * 24 * 60 * 60:
         d = max(1, secs // 86400)
-        return f"🔴 آخرین بازدید: {d} روز پیش"
-    return f"🔴 آخرین بازدید: {dt.strftime('%Y-%m-%d')}"
+        return f"🟡 {d} روز پیش آنلاین بوده"
+    return f"🟡 آخرین بازدید: {dt.strftime('%Y-%m-%d')}"

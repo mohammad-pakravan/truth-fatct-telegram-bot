@@ -19,6 +19,7 @@ from bot.services import moderation as mod_svc
 from bot.services import reports as report_svc
 from bot.services import matchmaker
 from bot.services import game_engine
+from bot.services import questions as qbank_svc
 from bot.services import search as search_svc
 from bot.services.presence import format_last_seen, online_emoji
 from bot.texts import fa as T
@@ -71,6 +72,7 @@ async def admin_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             admin_bc_target=None,
             admin_bc_from=None,
             admin_bc_mid=None,
+            admin_qbank_bucket=None,
         )
         await query.edit_message_text(T.ADMIN_HOME, reply_markup=kb.admin_home_keyboard())
         return
@@ -163,6 +165,10 @@ async def admin_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _show_channels(query)
         return
 
+    if data == "admin:qbank" or data.startswith("admin:qbank:"):
+        await _qbank_callbacks(query, tg, data)
+        return
+
     if data == "admin:admins":
         await _show_admins(query)
         return
@@ -177,6 +183,69 @@ async def admin_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         with get_session() as session:
             admin_svc.remove_admin(session, tid)
         await _show_admins(query)
+        return
+
+
+async def _qbank_callbacks(query, tg, data: str) -> None:
+    if data == "admin:qbank":
+        st.set_state(tg.id, mode="admin", waiting=None, admin_qbank_bucket=None)
+        with get_session() as session:
+            counts = qbank_svc.counts_summary(session)
+        await query.edit_message_text(
+            T.ADMIN_QBANK_MENU,
+            reply_markup=kb.admin_question_bank_keyboard(counts),
+        )
+        return
+
+    parts = data.split(":")
+    # admin:qbank:b:female | admin:qbank:add:female | list | clear
+    if len(parts) < 4:
+        return
+    action, bucket = parts[2], parts[3]
+    if bucket not in qbank_svc.BUCKETS:
+        return
+
+    label = qbank_svc.BUCKET_LABELS[bucket]
+
+    if action == "b":
+        st.set_state(tg.id, mode="admin", waiting=None, admin_qbank_bucket=bucket)
+        with get_session() as session:
+            n = qbank_svc.count_bucket(session, bucket)
+        await query.edit_message_text(
+            T.ADMIN_QBANK_BUCKET.format(label=label, n=n),
+            reply_markup=kb.admin_question_bucket_keyboard(bucket),
+        )
+        return
+
+    if action == "add":
+        st.set_state(tg.id, mode="admin", waiting="admin_qbank_add", admin_qbank_bucket=bucket)
+        await query.edit_message_text(T.ADMIN_QBANK_ASK.format(label=label))
+        return
+
+    if action == "list":
+        with get_session() as session:
+            items = qbank_svc.list_bucket(session, bucket, limit=25)
+            n = qbank_svc.count_bucket(session, bucket)
+        if not items:
+            body = T.ADMIN_QBANK_LIST_EMPTY
+        else:
+            numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(items, 1))
+            body = T.ADMIN_QBANK_LIST.format(label=label, n=n, list=numbered)
+            if len(body) > 3800:
+                body = body[:3800] + "…"
+        await query.edit_message_text(
+            body,
+            reply_markup=kb.admin_question_bucket_keyboard(bucket),
+        )
+        return
+
+    if action == "clear":
+        with get_session() as session:
+            n = qbank_svc.clear_bucket(session, bucket)
+        await query.edit_message_text(
+            T.ADMIN_QBANK_CLEARED.format(n=n, label=label),
+            reply_markup=kb.admin_question_bucket_keyboard(bucket),
+        )
         return
 
 
@@ -432,8 +501,36 @@ async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
             admin_bc_target=None,
             admin_bc_from=None,
             admin_bc_mid=None,
+            admin_qbank_bucket=None,
         )
         await update.message.reply_text(T.ADMIN_CANCELLED, reply_markup=kb.admin_home_keyboard())
+        return True
+
+    if waiting == "admin_qbank_add":
+        bucket = state.get("admin_qbank_bucket")
+        if not bucket or bucket not in qbank_svc.BUCKETS:
+            st.set_state(tg.id, waiting=None, admin_qbank_bucket=None)
+            await update.message.reply_text(T.ERROR_GENERIC, reply_markup=kb.admin_home_keyboard())
+            return True
+        questions = qbank_svc.parse_question_list(text)
+        if not questions:
+            await update.message.reply_text(T.ADMIN_QBANK_EMPTY_PARSE)
+            return True
+        label = qbank_svc.BUCKET_LABELS[bucket]
+        with get_session() as session:
+            added = qbank_svc.add_questions(
+                session,
+                bucket=bucket,
+                questions=questions,
+                kind="any",
+                created_by=tg.id,
+            )
+            total = qbank_svc.count_bucket(session, bucket)
+        st.set_state(tg.id, waiting=None)
+        await update.message.reply_text(
+            T.ADMIN_QBANK_ADDED.format(added=added, label=label, total=total),
+            reply_markup=kb.admin_question_bucket_keyboard(bucket),
+        )
         return True
 
     if waiting == "admin_bc_target":

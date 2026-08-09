@@ -26,13 +26,10 @@ RESULT_START_GROUP = "gc_start_group"
 RESULT_HELP_GROUP = "gc_help_group"
 RESULT_START_CHANNEL = "gc_start_channel"
 RESULT_HELP_CHANNEL = "gc_help_channel"
-
-# Required so Telegram returns inline_message_id on chosen_inline_result
-_PLACEHOLDER_MARKUP = InlineKeyboardMarkup(
-    [[InlineKeyboardButton("⏳ …", callback_data="gc:noop")]]
-)
+RESULT_RESUME = "gc_resume"
 
 _START_WORDS = ("شروع", "start", "بازی", "game")
+_GAME_LOBBY_WORDS = ("game", "بازی", "شروع", "start", "گروه", "group")
 
 
 def _bot_mention() -> str:
@@ -49,6 +46,19 @@ def _is_start_query(query: str) -> bool:
     if not q:
         return True
     return any(w in q for w in _START_WORDS)
+
+
+def _is_game_lobby_query(query: str) -> bool:
+    """Friends/group lobby (HJPlayBot-style) — including in channels."""
+    q = _norm(query)
+    if not q:
+        return True
+    return any(w in q for w in _GAME_LOBBY_WORDS)
+
+
+def _wants_channel_mode(query: str) -> bool:
+    q = _norm(query)
+    return any(k in q for k in ("کانال", "channel"))
 
 
 def _wants(query: str, *keywords: str) -> bool:
@@ -170,13 +180,39 @@ def _photo_result(prefix: str, user, *, with_play: bool = False):
     )
 
 
-def _article_start_group() -> InlineQueryResultArticle:
+def _article_start_group(tg_user) -> InlineQueryResultArticle:
+    """
+    Build lobby card immediately (no placeholder).
+    Avoids depending on chosen_inline_result / Inline Feedback.
+    """
+    from bot.handlers.group import _lobby_markup
+
+    with get_session() as session:
+        user = user_svc.get_or_create_user(
+            session, tg_user.id, tg_user.username, tg_user.full_name
+        )
+        game = game_engine.create_session(
+            session,
+            "group",
+            starter=user,
+            max_rounds=200,
+        )
+        game.status = "registering"
+        game_engine.add_player(session, game, user)
+        sid = game.id
+        names = "\n".join(
+            f"• {game_engine.display_for_player(p)}"
+            for p in game_engine.get_players(session, game)
+        ) or "—"
+        text = T.GROUP_REGISTER_OPEN.format(names=names)
+        markup = _lobby_markup(session, sid)
+
     return InlineQueryResultArticle(
-        id=RESULT_START_GROUP,
+        id=f"{RESULT_START_GROUP}:{sid}",
         title=T.INLINE_TITLE_START_GROUP,
         description=T.INLINE_DESC_START_GROUP,
-        input_message_content=InputTextMessageContent(T.INLINE_PLACEHOLDER_GROUP),
-        reply_markup=_PLACEHOLDER_MARKUP,
+        input_message_content=InputTextMessageContent(text),
+        reply_markup=markup,
     )
 
 
@@ -192,12 +228,24 @@ def _article_help_group(mention: str) -> InlineQueryResultArticle:
 
 
 def _article_start_channel() -> InlineQueryResultArticle:
+    # Ready-to-send help (no placeholder stuck state)
+    mention = _bot_mention()
+    text = T.CHANNEL_ID_ASK + T.CHANNEL_INTRO.format(bot=mention)
     return InlineQueryResultArticle(
         id=RESULT_START_CHANNEL,
         title=T.INLINE_TITLE_START_CHANNEL,
         description=T.INLINE_DESC_START_CHANNEL,
-        input_message_content=InputTextMessageContent(T.INLINE_PLACEHOLDER_CHANNEL),
-        reply_markup=_PLACEHOLDER_MARKUP,
+        input_message_content=InputTextMessageContent(text),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📩 ادامه در پیوی ربات",
+                        url=f"https://t.me/{BOT_USERNAME}" if BOT_USERNAME else "https://t.me/",
+                    )
+                ]
+            ]
+        ),
     )
 
 
@@ -320,6 +368,47 @@ async def _find_results(tg_user, parsed: dict) -> list:
     return results
 
 
+def _parse_resume_sid(qtext: str) -> int | None:
+    """Parse 'go 12' / 'go:12' / 'ادامه 12' for bump-to-bottom resume."""
+    import re
+
+    raw = (qtext or "").strip()
+    m = re.match(
+        r"^(?:go|cont|continue|resume|ادامه)\s*[#:]?\s*(\d+)\s*$",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
+def _article_resume_game(sid: int) -> InlineQueryResultArticle:
+    from bot.handlers.group import build_game_card
+
+    with get_session() as session:
+        game = game_engine.get_session(session, sid)
+        if not game or game.status not in ("playing", "registering"):
+            return InlineQueryResultArticle(
+                id=f"{RESULT_RESUME}:dead:{sid}",
+                title="بازی تموم شده",
+                description="این بازی دیگه فعال نیست",
+                input_message_content=InputTextMessageContent(T.GROUP_ENDED),
+            )
+        text, markup = build_game_card(session, game)
+
+    return InlineQueryResultArticle(
+        id=f"{RESULT_RESUME}:{sid}",
+        title="⬇️ انتقال بازی به پایین",
+        description="همین کارت بازی رو پایین چت می‌فرسته",
+        input_message_content=InputTextMessageContent(text),
+        reply_markup=markup,
+    )
+
+
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.inline_query
     if not query:
@@ -328,6 +417,15 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     qtext = query.query or ""
     chat_type = (query.chat_type or "").lower()
     mention = _bot_mention()
+
+    resume_sid = _parse_resume_sid(qtext)
+    if resume_sid is not None:
+        await query.answer(
+            [_article_resume_game(resume_sid)],
+            cache_time=0,
+            is_personal=True,
+        )
+        return
 
     social_mode, social_filt = _parse_social_query(qtext)
     if social_mode:
@@ -345,6 +443,8 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     results: list[InlineQueryResultArticle] = []
     start_q = _is_start_query(qtext)
+    lobby_q = _is_game_lobby_query(qtext)
+    channel_q = _wants_channel_mode(qtext)
 
     is_group = chat_type in (
         ChatType.GROUP,
@@ -354,35 +454,32 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
     is_channel = chat_type in (ChatType.CHANNEL, "channel")
 
-    # @Bot شروع  /  @Bot start  — same UX in group and channel
-    if is_group:
-        if start_q or _wants(qtext, "گروه", "group"):
-            results.append(_article_start_group())
+    # Friends lobby (@bot game) works in group, channel, and private.
+    # Channel voting mode only when query explicitly says کانال/channel.
+    if lobby_q and not channel_q:
+        results.append(_article_start_group(query.from_user))
         if _wants(qtext, "گروه", "group", "راهنما", "help") or start_q:
             results.append(_article_help_group(mention))
-
-    elif is_channel:
-        if start_q or _wants(qtext, "کانال", "channel"):
+    elif channel_q or (is_channel and start_q):
+        results.append(_article_start_channel())
+        results.append(_article_help_channel(mention))
+    elif is_group:
+        results.append(_article_start_group(query.from_user))
+        results.append(_article_help_group(mention))
+    else:
+        # Private / unknown
+        if lobby_q or _wants(qtext, "گروه", "group"):
+            results.append(_article_start_group(query.from_user))
+        if channel_q or _wants(qtext, "کانال", "channel"):
             results.append(_article_start_channel())
+        if not results:
+            results.append(_article_start_group(query.from_user))
+            results.append(_article_start_channel())
+        if _wants(qtext, "گروه", "group", "راهنما", "help") or start_q:
+            results.append(_article_help_group(mention))
         if _wants(qtext, "کانال", "channel", "راهنما", "help") or start_q:
             results.append(_article_help_channel(mention))
 
-    else:
-        # Private / unknown: show both starts on شروع|start
-        if start_q or _wants(qtext, "گروه", "group"):
-            results.append(_article_start_group())
-        if start_q or _wants(qtext, "کانال", "channel"):
-            results.append(_article_start_channel())
-        if _wants(qtext, "گروه", "group", "راهنما", "help") or (
-            start_q and not results
-        ):
-            results.append(_article_help_group(mention))
-        if _wants(qtext, "کانال", "channel", "راهنما", "help") or (
-            start_q and len(results) < 2
-        ):
-            results.append(_article_help_channel(mention))
-
-        # Hint articles for social lists in private
         if start_q or not qtext.strip():
             results.insert(
                 0,
@@ -423,31 +520,67 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     results = unique
 
     if not results:
-        if is_channel:
-            results = [_article_start_channel(), _article_help_channel(mention)]
-        elif is_group:
-            results = [_article_start_group(), _article_help_group(mention)]
-        else:
-            results = [
-                _article_start_group(),
-                _article_start_channel(),
-                _article_help_group(mention),
-                _article_help_channel(mention),
-            ]
+        results = [
+            _article_start_group(query.from_user),
+            _article_help_group(mention),
+        ]
 
     await query.answer(results[:50], cache_time=0, is_personal=True)
 
 
 async def chosen_inline_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Optional: bind inline_message_id when Inline Feedback is enabled."""
     chosen = update.chosen_inline_result
     if not chosen or not chosen.from_user:
         return
 
-    result_id = chosen.result_id
+    result_id = chosen.result_id or ""
     inline_message_id = chosen.inline_message_id
     tg = chosen.from_user
     mention = _bot_mention()
 
+    # New format: gc_start_group:{sid} — lobby already in message; just bind id
+    if result_id.startswith(f"{RESULT_START_GROUP}:"):
+        if not inline_message_id:
+            return
+        try:
+            sid = int(result_id.split(":", 1)[1])
+        except ValueError:
+            return
+        with get_session() as session:
+            game = game_engine.get_session(session, sid)
+            if game:
+                game.inline_message_id = inline_message_id
+        return
+
+    # Bump / resume card at bottom
+    if result_id.startswith(f"{RESULT_RESUME}:"):
+        parts = result_id.split(":")
+        if len(parts) < 2 or parts[1] == "dead":
+            return
+        try:
+            sid = int(parts[1])
+        except ValueError:
+            return
+        with get_session() as session:
+            game = game_engine.get_session(session, sid)
+            if not game:
+                return
+            old_inline = game.inline_message_id
+            if inline_message_id:
+                game.inline_message_id = inline_message_id
+        # Soften previous card if we still know it
+        if old_inline and old_inline != inline_message_id:
+            try:
+                await context.bot.edit_message_text(
+                    text="⬇️ بازی پایین‌تر منتقل شد.",
+                    inline_message_id=old_inline,
+                )
+            except Exception:
+                pass
+        return
+
+    # Legacy placeholder id (pre-fix)
     if result_id == RESULT_START_GROUP:
         if not inline_message_id:
             return
@@ -465,28 +598,26 @@ async def chosen_inline_result(update: Update, context: ContextTypes.DEFAULT_TYP
                     session,
                     "group",
                     starter=user,
-                    max_rounds=8,
+                    max_rounds=200,
                     inline_message_id=inline_message_id,
                 )
                 game.status = "registering"
                 game_engine.add_player(session, game, user)
             sid = game.id
-            names = "، ".join(
-                game_engine.display_for_player(p)
+            names = "\n".join(
+                f"• {game_engine.display_for_player(p)}"
                 for p in game_engine.get_players(session, game)
-            )
-            count = game_engine.player_count(session, game)
+            ) or "—"
+            from bot.handlers.group import _lobby_markup
 
-        text = (
-            T.GROUP_REGISTER_OPEN.format(sid=sid)
-            + "\n\n"
-            + T.GROUP_PLAYERS_LIST.format(count=count, names=names)
-        )
+            text = T.GROUP_REGISTER_OPEN.format(names=names)
+            markup = _lobby_markup(session, sid)
+
         try:
             await context.bot.edit_message_text(
                 text=text,
                 inline_message_id=inline_message_id,
-                reply_markup=kb.join_group_game(sid),
+                reply_markup=markup,
             )
         except Exception:
             pass

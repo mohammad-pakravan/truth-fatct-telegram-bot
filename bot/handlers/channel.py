@@ -172,7 +172,7 @@ async def channel_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
             game = game_engine.get_session(session, sid)
-            if not game or game.starter_user_id != user.id:
+            if not game or game.game_type != "channel" or game.starter_user_id != user.id:
                 await query.edit_message_text(T.CHANNEL_NOT_OWNER)
                 return
             if game.status == "finished":
@@ -199,7 +199,7 @@ async def channel_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
             game = game_engine.get_session(session, sid)
-            if not game or game.starter_user_id != user.id:
+            if not game or game.game_type != "channel" or game.starter_user_id != user.id:
                 await query.edit_message_text(T.CHANNEL_NOT_OWNER)
                 return
             game_engine.finish_game(session, game)
@@ -237,10 +237,11 @@ async def discussion_comment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not game:
             return
 
-        # Prefer replies to the bot prompt; also accept any text if no prompt id yet
-        if game.channel_prompt_message_id:
-            if not reply or reply.message_id != game.channel_prompt_message_id:
-                return
+        # Only count replies to the channel prompt message (avoid scooping group chat)
+        if not game.channel_prompt_message_id:
+            return
+        if not reply or reply.message_id != game.channel_prompt_message_id:
+            return
 
         rnd = (
             session.query(Round)
@@ -364,7 +365,7 @@ async def _cast_option_vote(query, session_id: int, round_id: int, idx: str) -> 
     with get_session() as session:
         rnd = session.get(Round, round_id)
         game = game_engine.get_session(session, session_id)
-        if not rnd or not game or rnd.status != "open" or game.status != "playing":
+        if not rnd or not game or game.game_type != "channel" or rnd.status != "open" or game.status != "playing":
             await query.answer("رأی‌گیری بسته شده.", show_alert=True)
             return
         if game.channel_answer_mode != "buttons":
@@ -399,7 +400,7 @@ async def _close_round(query, context, session_id: int, round_id: int) -> None:
         user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
         game = game_engine.get_session(session, session_id)
         rnd = session.get(Round, round_id)
-        if not game or not rnd:
+        if not game or not rnd or game.game_type != "channel":
             await query.answer("پیدا نشد.", show_alert=True)
             return
         if game.starter_user_id != user.id:

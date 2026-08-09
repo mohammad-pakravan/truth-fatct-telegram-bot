@@ -196,6 +196,14 @@ async def advanced_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _enqueue_from_prefs(query, context, tg, prefs)
         return
 
+    if data.startswith("adv_prof:"):
+        await query.answer()
+        target_id = int(data.split(":")[1])
+        from bot.handlers import user_profile
+
+        await user_profile.show_user_profile(update, context, target_id)
+        return
+
     if data.startswith("adv_play:"):
         await query.answer()
         target_id = int(data.split(":")[1])
@@ -282,9 +290,13 @@ async def _show_results(query, context, tg, prefs, page: int) -> None:
             button_rows.append(
                 [
                     InlineKeyboardButton(
-                        f"{dot} 🎮 دعوت {name}"[:60],
+                        T.BTN_VIEW_PROFILE,
+                        callback_data=f"adv_prof:{uid}",
+                    ),
+                    InlineKeyboardButton(
+                        f"{dot} 🎮 دعوت"[:40],
                         callback_data=f"adv_play:{uid}",
-                    )
+                    ),
                 ]
             )
 

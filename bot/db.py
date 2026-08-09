@@ -69,6 +69,7 @@ def _migrate_round_media_columns() -> None:
         ("prompt_file_id", "VARCHAR(256)"),
         ("answer_media_type", "VARCHAR(16)"),
         ("answer_file_id", "VARCHAR(256)"),
+        ("category_key", "VARCHAR(16)"),
     ]
 
     if DATABASE_URL.startswith("sqlite"):

@@ -136,6 +136,8 @@ class Round(Base):
     target_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     # truth | dare | pending
     choice: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    # group category key e.g. tf18 | lucky (for reshuffle / resume)
+    category_key: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     prompt_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # photo | voice | video | video_note
     prompt_media_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
@@ -376,3 +378,45 @@ class PlayInvite(Base):
 
     from_user: Mapped["User"] = relationship(foreign_keys=[from_user_id])
     to_user: Mapped["User"] = relationship(foreign_keys=[to_user_id])
+
+
+class UserBlock(Base):
+    """One-way block: blocker cannot be matched/messaged by blocked."""
+
+    __tablename__ = "user_blocks"
+    __table_args__ = (UniqueConstraint("blocker_id", "blocked_id", name="uq_user_block"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    blocker_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    blocked_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OnlineNotify(Base):
+    """Watcher wants a ping when target comes online."""
+
+    __tablename__ = "online_notifies"
+    __table_args__ = (UniqueConstraint("watcher_id", "target_id", name="uq_online_notify"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    watcher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # After we notify once, clear or keep? Keep until toggled off; notify each offline→online.
+    last_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+class QuestionBankItem(Base):
+    """Admin-managed prompts keyed by gender bucket (+18)."""
+
+    __tablename__ = "question_bank"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # female | female_18 | male | male_18
+    bucket: Mapped[str] = mapped_column(String(32), index=True)
+    # truth | dare | any
+    kind: Mapped[str] = mapped_column(String(16), default="any", index=True)
+    text: Mapped[str] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+

@@ -211,6 +211,10 @@ async def hub_profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await history.open_history(update, context)
         return True
 
+    if text == T.BTN_HELP:
+        await open_help(update, context)
+        return True
+
     if text == T.BTN_GAME_SETTINGS:
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
@@ -346,18 +350,10 @@ async def contacts_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data.startswith("contact:view:"):
         cid = int(data.split(":")[2])
-        with get_session() as session:
-            me = user_svc.get_or_create_user(session, tg.id, tg.username)
-            other = session.get(User, cid)
-            if not other:
-                await query.answer("پیدا نشد.", show_alert=True)
-                return
-            text = "پروفایل:\n" + user_svc.format_profile(other, viewer_settings=me)
         await query.answer()
-        try:
-            await query.edit_message_text(text)
-        except Exception:
-            await context.bot.send_message(tg.id, text)
+        from bot.handlers import user_profile
+
+        await user_profile.show_user_profile(update, context, cid)
         return
 
     await query.answer()
