@@ -143,6 +143,50 @@ def _profile_description(user) -> str:
     return f"{city} · {status}"[:120]
 
 
+_THUMB_CACHE: dict[str, str] = {}
+
+
+async def _thumbnail_url(bot, user) -> str | None:
+    """HTTPS thumb for Article rows (list UI with avatar)."""
+    return await ph_svc.thumb_url_for_user(bot, user)
+
+
+async def _find_result(bot, user):
+    """
+    Vertical list row: avatar thumb + name + last-seen.
+    Selecting sends only /Profile_… so the bot opens the profile in one step.
+    """
+    from bot.services.presence import presence_label
+    from bot.services.profile_links import profile_command
+
+    uid = int(getattr(user, "id", 0) or 0)
+    in_game = bool(getattr(user, "in_game", False))
+    name = user_svc.public_name(user)
+    cmd = profile_command(uid)
+    status = presence_label(
+        last_active_at=getattr(user, "last_active_at", None), in_game=in_game
+    )
+    gender = getattr(user, "gender", None)
+    # Emoji prefix so rows still look gendered if thumbnail_url fails to load.
+    prefix = "👩 " if gender == "female" else "👨 " if gender == "male" else "👤 "
+    title = (prefix + name)[:64]
+    desc = status[:120]
+    thumb = await _thumbnail_url(bot, user)
+    kwargs = dict(
+        id=f"find:{uid}",
+        title=title,
+        description=desc,
+        input_message_content=InputTextMessageContent(cmd),
+    )
+    # Only attach thumbnail_url when we have a real public HTTPS link.
+    # Broken/local URLs produce empty gray squares (worse than no thumb).
+    if thumb and str(thumb).startswith("https://"):
+        kwargs["thumbnail_url"] = thumb
+        kwargs["thumbnail_width"] = 128
+        kwargs["thumbnail_height"] = 128
+    return InlineQueryResultArticle(**kwargs)
+
+
 def _photo_result(prefix: str, user, *, with_play: bool = False):
     file_id = ph_svc.photo_file_id_for_user(user)
     caption = _profile_caption(user)
@@ -152,13 +196,25 @@ def _photo_result(prefix: str, user, *, with_play: bool = False):
     rid = f"{prefix}:{uid}"
     play_kb = None
     if with_play and uid:
+        in_game = bool(getattr(user, "in_game", False))
+        if in_game:
+            invite_btn = InlineKeyboardButton(
+                T.BTN_ADV_IN_GAME,
+                callback_data=f"adv_busy:{uid}",
+            )
+        else:
+            invite_btn = InlineKeyboardButton(
+                T.BTN_ADV_INVITE,
+                callback_data=f"adv_play:{uid}",
+            )
         play_kb = InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
-                        "📨 دعوت به بازی",
-                        callback_data=f"adv_play:{uid}",
-                    )
+                        f"{T.BTN_VIEW_PROFILE} #{uid}"[:40],
+                        callback_data=f"adv_prof:{uid}",
+                    ),
+                    invite_btn,
                 ]
             ]
         )
@@ -195,7 +251,7 @@ def _article_start_group(tg_user) -> InlineQueryResultArticle:
             session,
             "group",
             starter=user,
-            max_rounds=200,
+            max_rounds=0,
         )
         game.status = "registering"
         game_engine.add_player(session, game, user)
@@ -316,7 +372,7 @@ async def _social_results(tg_user, mode: str, filt: str) -> list:
     return results
 
 
-async def _find_results(tg_user, parsed: dict) -> list:
+async def _find_results(tg_user, parsed: dict, bot) -> list:
     from bot.services import search as search_svc
 
     with get_session() as session:
@@ -329,7 +385,7 @@ async def _find_results(tg_user, parsed: dict) -> list:
             gender=parsed.get("gender"),
             province=parsed.get("province"),
             name_filter=parsed.get("name_filter"),
-            limit=30,
+            limit=50,
         )
         snaps = []
         for u in users:
@@ -342,9 +398,12 @@ async def _find_results(tg_user, parsed: dict) -> list:
                     "province": u.province,
                     "username": u.username,
                     "gender": u.gender,
+                    "age": u.age,
                     "likes_count": u.likes_count,
                     "last_active_at": u.last_active_at,
                     "profile_photo_file_id": u.profile_photo_file_id,
+                    "profile_photo_key": u.profile_photo_key,
+                    "show_photo": bool(u.show_photo),
                     "in_game": bool(game_engine.active_session_for_user(session, u)),
                 }
             )
@@ -359,14 +418,11 @@ async def _find_results(tg_user, parsed: dict) -> list:
             )
         ]
 
-    results = []
+    # Vertical article list: thumb + name + last-seen (not photo grid).
+    out = []
     for s in snaps:
-        u = type("U", (), s)()
-        item = _photo_result("find", u, with_play=True)
-        if item:
-            results.append(item)
-    return results
-
+        out.append(await _find_result(bot, type("U", (), s)()))
+    return out
 
 def _parse_resume_sid(qtext: str) -> int | None:
     """Parse 'go 12' / 'go:12' / 'ادامه 12' for bump-to-bottom resume."""
@@ -437,7 +493,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     find_parsed = search_svc.parse_gender_province_query(qtext)
     if find_parsed:
-        results = await _find_results(query.from_user, find_parsed)
+        results = await _find_results(query.from_user, find_parsed, context.bot)
         await query.answer(results[:50], cache_time=0, is_personal=True)
         return
 
@@ -598,7 +654,7 @@ async def chosen_inline_result(update: Update, context: ContextTypes.DEFAULT_TYP
                     session,
                     "group",
                     starter=user,
-                    max_rounds=200,
+                    max_rounds=0,
                     inline_message_id=inline_message_id,
                 )
                 game.status = "registering"

@@ -106,18 +106,27 @@ def public_name(user: User, mode: str = "real", custom: Optional[str] = None) ->
 
 
 SETTING_FIELDS = {
-    "allow_stranger_requests",
-    "allow_anonymous_requests",
-    "show_identity",
-    "show_age",
-    "show_photo",
-    "show_private_id",
+    "account_private",
+    "notify_profile_visit",
+    "notify_follow",
 }
 
 
 def toggle_setting(user: User, field: str) -> bool:
     if field not in SETTING_FIELDS:
         raise ValueError(field)
-    current = getattr(user, field)
+    current = bool(getattr(user, field, False))
     setattr(user, field, not current)
-    return getattr(user, field)
+    # Keep stranger-search gate in sync with private account.
+    if field == "account_private":
+        user.allow_stranger_requests = not bool(user.account_private)
+    return bool(getattr(user, field))
+
+
+def set_account_private(user: User, private: bool = True) -> None:
+    user.account_private = bool(private)
+    user.allow_stranger_requests = not bool(private)
+
+
+def is_account_private(user: User) -> bool:
+    return bool(getattr(user, "account_private", False))

@@ -165,7 +165,14 @@ async def wizard_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> boo
         await update.message.reply_text(T.WIZARD_ASK_PHOTO, reply_markup=kb.skip_photo_menu())
         return True
 
-    if step == "photo" and text in (T.BTN_SKIP_PHOTO, T.BTN_SKIP):
+    if step == "photo" and (
+        text.replace("\ufe0f", "")
+        in {
+            T.BTN_SKIP_PHOTO.replace("\ufe0f", ""),
+            T.BTN_SKIP.replace("\ufe0f", ""),
+            "⏭ فعلاً بدون عکس",
+        }
+    ):
         await _finish_wizard(update, context)
         return True
 
@@ -186,8 +193,10 @@ async def wizard_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
     if st.get(tg.id).get("mode") != "wizard" or st.get(tg.id).get("wizard_step") != "photo":
         if st.get(tg.id).get("waiting") == "photo":
             await _save_photo(update, context)
-            st.set_state(tg.id, waiting=None, mode="profile")
-            await update.message.reply_text("عکس عوض شد ✅")
+            st.set_state(tg.id, waiting=None, mode="hub_profile")
+            await update.message.reply_text(
+                "عکس عوض شد ✅", reply_markup=kb.hub_profile_menu()
+            )
             return True
         return False
 

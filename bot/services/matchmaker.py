@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import logging
@@ -276,12 +276,18 @@ def _compatible(a: MatchQueue, ua: User, b: MatchQueue, ub: User) -> bool:
     if db and (mod_svc.is_restricted(db, ua) or mod_svc.is_restricted(db, ub)):
         return False
 
-    if not ub.allow_stranger_requests or not ua.allow_stranger_requests:
-        return False
-
     # Fake-identity pool: pair anyone in the pool (filters apply to real cards only)
     if a.use_fake_identity and b.use_fake_identity:
         return True
+
+    # Anonymous queue: both explicitly chose «بازی با ناشناس» — match freely.
+    # Do not apply allow_anonymous_requests / gender / city / age prefs here;
+    # those settings gate stranger/advanced flows, not mutual anon seeking.
+    if a.queue_mode == "anonymous" and b.queue_mode == "anonymous":
+        return True
+
+    if not ub.allow_stranger_requests or not ua.allow_stranger_requests:
+        return False
 
     if a.play_anonymous and not ub.allow_anonymous_requests:
         return False

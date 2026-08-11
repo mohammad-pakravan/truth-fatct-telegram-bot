@@ -20,25 +20,32 @@ async def maybe_prompt_sponsor(
     continue_to: str,
 ) -> bool:
     """
-    If active sponsored channels exist for the given province(s), show join UI.
+    If active sponsored channels exist for the given province(s) and the user
+    is not already a member of all of them, show join UI.
     provinces: one province name or a list (e.g. advanced partner provinces).
     continue_to: 'wizard_city' | 'profile_done' | 'advanced_age'
+    Returns True if the join UI was shown (caller should stop).
     """
     if isinstance(provinces, str):
         prov_list = [provinces] if provinces else []
     else:
         prov_list = [p for p in provinces if p]
 
+    tg_id = query.from_user.id
     with get_session() as session:
         channels = mem_svc.list_active_for_provinces(session, prov_list)
-        if channels:
-            await mem_svc.refresh_channel_meta(context, session, channels)
-        snap = mem_svc.snapshot_channels(channels)
+        if not channels:
+            return False
+        await mem_svc.refresh_channel_meta(context, session, channels)
+        missing = await mem_svc.missing_channels(context, session, tg_id, prov_list)
+        if not missing:
+            # Already in every sponsor channel — never re-prompt.
+            return False
+        snap = mem_svc.snapshot_channels(missing)
 
     if not snap:
         return False
 
-    tg_id = query.from_user.id
     label = "، ".join(prov_list)
     st.set_state(
         tg_id,
@@ -178,5 +185,7 @@ async def membership_callbacks(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.message.reply_text(
         f"استان «{province_label}» اوکیه و عضویتت هم تأیید شد 🎉"
         if province_label
-        else "عضویتت تأیید شد 🎉"
+        else "عضویتت تأیید شد 🎉",
+        reply_markup=kb.hub_profile_menu(),
     )
+    st.set_state(tg.id, mode="hub_profile")

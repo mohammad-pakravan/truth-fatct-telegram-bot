@@ -201,7 +201,12 @@ async def advanced_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         target_id = int(data.split(":")[1])
         from bot.handlers import user_profile
 
+        # Profile is a separate new message — keep results list intact.
         await user_profile.show_user_profile(update, context, target_id)
+        return
+
+    if data.startswith("adv_busy:"):
+        await query.answer(T.INVITE_IN_GAME, show_alert=True)
         return
 
     if data.startswith("adv_play:"):
@@ -210,16 +215,11 @@ async def advanced_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from bot.handlers import play_invite
 
         async def _notify(text: str) -> None:
+            # Keep results list; busy/errors as a separate message only.
             try:
-                await query.edit_message_text(text)
+                await context.bot.send_message(tg.id, text)
             except Exception:
-                try:
-                    await query.edit_message_caption(caption=text)
-                except Exception:
-                    try:
-                        await context.bot.send_message(tg.id, text)
-                    except Exception:
-                        pass
+                pass
 
         await play_invite.send_play_invite(
             context, from_tg=tg, to_user_id=target_id, notify=_notify
@@ -227,8 +227,12 @@ async def advanced_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
 
+_PAGE_SIZE = 10
+
+
 async def _show_results(query, context, tg, prefs, page: int) -> None:
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from bot.services.presence import presence_label
 
     with get_session() as session:
         me = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
@@ -241,10 +245,10 @@ async def _show_results(query, context, tg, prefs, page: int) -> None:
             age_to=prefs.get("age_to"),
             last_seen_hours=prefs.get("last_seen_hours"),
             sort_by=prefs.get("sort_by") or "online",
-            limit=30,
+            limit=50,
         )
         ids = [u.id for u in found]
-        st.set_state(tg.id, adv={**prefs, "result_ids": ids})
+        st.set_state(tg.id, adv={**prefs, "result_ids": ids, "page": page})
 
         summary = search_svc.filters_summary(prefs)
         gender = prefs.get("gender")
@@ -271,39 +275,38 @@ async def _show_results(query, context, tg, prefs, page: int) -> None:
             )
             return
 
-        start = page * 5
-        page_ids = ids[start : start + 5]
+        from bot.services.profile_links import profile_command
+
+        start = page * _PAGE_SIZE
+        page_ids = ids[start : start + _PAGE_SIZE]
         lines = []
         button_rows = [inline_row]
         for n, uid in enumerate(page_ids, start + 1):
             u = session.get(User, uid)
             if not u:
                 continue
-            place = u.province or u.city or "—"
             name = user_svc.public_name(u)
-            from bot.services.presence import presence_badge, presence_label
-
+            cmd = profile_command(uid)
             in_game = bool(game_engine.active_session_for_user(session, u))
-            dot = presence_badge(last_active_at=u.last_active_at, in_game=in_game)
             status = presence_label(last_active_at=u.last_active_at, in_game=in_game)
-            lines.append(f"{n}. {dot} {name} — {u.age or '؟'} ساله — {place}\n   {status}")
-            button_rows.append(
-                [
-                    InlineKeyboardButton(
-                        T.BTN_VIEW_PROFILE,
-                        callback_data=f"adv_prof:{uid}",
-                    ),
-                    InlineKeyboardButton(
-                        f"{dot} 🎮 دعوت"[:40],
-                        callback_data=f"adv_play:{uid}",
-                    ),
-                ]
-            )
+            # One compact row: name · last-seen · profile command
+            lines.append(f"{n}. {name} · {status} · {cmd}")
+            if in_game:
+                invite_btn = InlineKeyboardButton(
+                    T.BTN_ADV_IN_GAME,
+                    callback_data=f"adv_busy:{uid}",
+                )
+            else:
+                invite_btn = InlineKeyboardButton(
+                    f"{T.BTN_ADV_INVITE} {name}"[:40],
+                    callback_data=f"adv_play:{uid}",
+                )
+            button_rows.append([invite_btn])
 
         nav = []
         if page > 0:
             nav.append(InlineKeyboardButton(T.BTN_PREV_PAGE, callback_data=f"adv_page:{page-1}"))
-        if start + 5 < len(ids):
+        if start + _PAGE_SIZE < len(ids):
             nav.append(InlineKeyboardButton(T.BTN_NEXT_PAGE, callback_data=f"adv_page:{page+1}"))
         if nav:
             button_rows.append(nav)

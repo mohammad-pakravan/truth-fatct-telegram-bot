@@ -192,18 +192,6 @@ async def hub_profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(T.HUB_PROFILE_TEXT, reply_markup=kb.hub_profile_menu())
         return True
 
-    if text == T.BTN_PROFILE:
-        from bot.handlers import profile
-
-        await profile.open_profile(update, context)
-        return True
-
-    if text == T.BTN_RUN_WIZARD:
-        from bot.handlers import wizard
-
-        await wizard.start_wizard(update, context, force=True)
-        return True
-
     if text == T.BTN_HISTORY:
         from bot.handlers import history
 

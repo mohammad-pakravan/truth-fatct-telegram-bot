@@ -29,6 +29,42 @@ def init_db() -> None:
     _migrate_game_session_inline_message()
     _migrate_round_media_columns()
     _migrate_user_likes_count()
+    _migrate_account_privacy_columns()
+
+
+def _migrate_account_privacy_columns() -> None:
+    """account_private / notify_profile_visit / notify_follow on users."""
+    cols = [
+        ("account_private", "BOOLEAN DEFAULT FALSE", "BOOLEAN DEFAULT FALSE"),
+        ("notify_profile_visit", "BOOLEAN DEFAULT FALSE", "BOOLEAN DEFAULT FALSE"),
+        ("notify_follow", "BOOLEAN DEFAULT FALSE", "BOOLEAN DEFAULT FALSE"),
+    ]
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
+            existing = {r[1] for r in rows}
+            for name, sqlite_ddl, _pg in cols:
+                if name not in existing:
+                    conn.exec_driver_sql(
+                        f"ALTER TABLE users ADD COLUMN {name} {sqlite_ddl}"
+                    )
+        return
+    if "postgresql" not in DATABASE_URL:
+        return
+    try:
+        with engine.begin() as conn:
+            for name, _sqlite, pg_ddl in cols:
+                exists = conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = 'users' AND column_name = :col"
+                    ),
+                    {"col": name},
+                ).fetchone()
+                if not exists:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {pg_ddl}"))
+    except Exception:
+        pass
 
 
 def _migrate_user_likes_count() -> None:

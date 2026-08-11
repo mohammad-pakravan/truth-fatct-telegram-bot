@@ -142,7 +142,7 @@ async def group_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             game_engine.add_player(session, game, user)
         else:
             game = game_engine.create_session(
-                session, "group", starter=user, chat_id=chat.id, max_rounds=200
+                session, "group", starter=user, chat_id=chat.id, max_rounds=0
             )
             game.status = "registering"
             game_engine.add_player(session, game, user)

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -103,7 +103,7 @@ async def accept_invite_and_notify(
             chooser_name = "?"
             target_name = "?"
             chooser_tg: int | None = None
-            waiter_tg: int | None = None
+            picker_tg: int | None = None
             for p in game_engine.get_players(session, accepted.game):
                 name = game_engine.display_for_player(p)
                 if p.user_id == rnd.chooser_user_id:
@@ -111,10 +111,10 @@ async def accept_invite_and_notify(
                     chooser_tg = p.user.telegram_id if p.user else None
                 if p.user_id == rnd.target_user_id:
                     target_name = name
-                    waiter_tg = p.user.telegram_id if p.user else None
+                    picker_tg = p.user.telegram_id if p.user else None
 
             game_id = accepted.game.id
-            chooser_user_id = rnd.chooser_user_id
+            picker_user_id = rnd.target_user_id
     except RuntimeError as exc:
         code = str(exc)
         msg = {
@@ -127,39 +127,39 @@ async def accept_invite_and_notify(
         return True
 
     match_body = T.INVITE_ACCEPTED.format(label=label)
-    turn = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
+    turn = T.CHOOSE_TRUTH_OR_DARE
 
-    if chooser_tg:
+    if picker_tg:
         try:
             mid = await upsert_hub(
                 context.bot,
-                chooser_tg,
+                picker_tg,
                 T.MATCH_HUB.format(match_body=match_body),
-                reply_kb=kb.in_game_menu(is_chooser=True),
+                reply_kb=kb.in_game_menu(is_chooser=False),
                 replace_keyboard=True,
             )
             glass_id = await show_td_glass(
                 context.bot,
-                chooser_tg,
+                picker_tg,
                 session_id=game_id,
-                chooser_id=chooser_user_id,
+                chooser_id=picker_user_id,
                 turn_text=turn,
             )
             st.set_state(
-                chooser_tg, game_hub_message_id=mid, game_glass_message_id=glass_id
+                picker_tg, game_hub_message_id=mid, game_glass_message_id=glass_id
             )
         except Exception:
             pass
-    if waiter_tg and waiter_tg != chooser_tg:
+    if chooser_tg and chooser_tg != picker_tg:
         try:
             mid = await upsert_hub(
                 context.bot,
-                waiter_tg,
+                chooser_tg,
                 T.MATCH_START_WAITER.format(match_body=match_body, turn=turn),
                 reply_kb=kb.in_game_menu(is_chooser=False),
                 replace_keyboard=True,
             )
-            st.set_state(waiter_tg, game_hub_message_id=mid)
+            st.set_state(chooser_tg, game_hub_message_id=mid)
         except Exception:
             pass
     return True

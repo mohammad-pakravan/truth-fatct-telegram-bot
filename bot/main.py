@@ -175,6 +175,10 @@ async def on_photo(update, context):
         return
     if await gameplay.on_game_media(update, context):
         return
+    # Inline find sends CachedPhoto with /Profile_… caption
+    cap = (update.message.caption or "").strip() if update.message else ""
+    if cap.lower().startswith("/profile_"):
+        await user_profile.on_profile_command(update, context)
 
 
 async def on_voice_or_video(update, context):
@@ -270,6 +274,13 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CommandHandler("group_game", group.group_game_cmd))
     app.add_handler(CommandHandler("channel_game", channel.channel_game_cmd))
     app.add_handler(CommandHandler("cancel_match", stranger.cancel_match_cmd))
+    app.add_handler(CommandHandler("set_private", profile.set_private_cmd))
+    app.add_handler(
+        MessageHandler(
+            filters.Regex(r"(?i)^/profile_[A-Za-z0-9_-]+(?:@\w+)?\s*$"),
+            user_profile.on_profile_command,
+        )
+    )
 
     app.add_handler(InlineQueryHandler(inline_mode.inline_query))
     app.add_handler(ChosenInlineResultHandler(inline_mode.chosen_inline_result))
@@ -288,12 +299,15 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CallbackQueryHandler(gameplay.on_post_game_action, pattern=r"^pgact:"))
     app.add_handler(CallbackQueryHandler(menu.contacts_callbacks, pattern=r"^contact:"))
     app.add_handler(CallbackQueryHandler(menu.hub_friends_callbacks, pattern=r"^hubf:"))
+    app.add_handler(CallbackQueryHandler(profile.privacy_callbacks, pattern=r"^priv:"))
     app.add_handler(CallbackQueryHandler(user_profile.on_uprofile_callback, pattern=r"^up:"))
     app.add_handler(CallbackQueryHandler(user_profile.on_upreport_callback, pattern=r"^upreport:"))
     app.add_handler(CallbackQueryHandler(group.gc_help_callback, pattern=r"^gc:"))
     app.add_handler(CallbackQueryHandler(group.group_callbacks, pattern=r"^(gjoin:|gstart:|grejoin:|gcat:|greshuf:|gdone:|gnext:|gend:)"))
     app.add_handler(CallbackQueryHandler(gameplay.on_truth_dare, pattern=r"^td:"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_asker_bank, pattern=r"^1vq:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_game_action, pattern=r"^gact:"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_end_confirm, pattern=r"^end(ok|no):"))
     app.add_handler(CallbackQueryHandler(gameplay.on_skip, pattern=r"^skip:"))
     app.add_handler(CallbackQueryHandler(stranger.nearby_callbacks, pattern=r"^near_r:"))
     app.add_handler(
@@ -306,7 +320,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(
         CallbackQueryHandler(
             advanced.advanced_callbacks,
-            pattern=r"^(adv_partner:|adv_prov|adv_age:|adv_seen:|adv_sort:|adv_page:|adv_play:|adv_prof:|adv_research$|adv_queue$)",
+            pattern=r"^(adv_partner:|adv_prov|adv_age:|adv_seen:|adv_sort:|adv_page:|adv_play:|adv_busy:|adv_prof:|adv_research$|adv_queue$)",
         )
     )
     app.add_handler(

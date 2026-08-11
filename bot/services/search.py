@@ -222,7 +222,11 @@ def parse_gender_province_query(qtext: str) -> dict[str, Any] | None:
     else:
         blob = raw
         # Must look like a gender/province find (not likes/contacts/شروع)
-        gender_words = ("پسر", "دختر", "male", "female", "آقا", "خانم", "مرد", "زن")
+        gender_words = (
+            "پسر", "پسرها", "پسران",
+            "دختر", "دخترا", "دخترها", "دختران",
+            "male", "female", "آقا", "خانم", "مرد", "زن",
+        )
         if not any(w in blob for w in gender_words) and not any(
             p in blob for p in PROVINCES
         ):
@@ -233,22 +237,29 @@ def parse_gender_province_query(qtext: str) -> dict[str, Any] | None:
 
     gender = None
     gmap = {
+        "پسرها": "male",
+        "پسران": "male",
         "پسر": "male",
         "آقا": "male",
         "مرد": "male",
         "male": "male",
+        "دخترها": "female",
+        "دختران": "female",
+        "دخترا": "female",
         "دختر": "female",
         "خانم": "female",
         "زن": "female",
         "female": "female",
     }
+    # Longer keys first so «دخترا» wins over «دختر»
+    gmap_items = sorted(gmap.items(), key=lambda kv: len(kv[0]), reverse=True)
     tokens = blob.replace("،", " ").split()
     leftover: list[str] = []
     province = None
     # Longest province match first
     sorted_provs = sorted(PROVINCES, key=len, reverse=True)
     remaining = blob
-    for gword, gcode in gmap.items():
+    for gword, gcode in gmap_items:
         if gword in tokens or gword in remaining:
             gender = gcode
             remaining = remaining.replace(gword, " ", 1)

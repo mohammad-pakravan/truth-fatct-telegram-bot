@@ -12,6 +12,7 @@ from bot.keyboards import main_menu
 from bot.models import User
 from bot.services import game_engine
 from bot.services import play_invites as invite_svc
+from bot.services import social as social_svc
 from bot.services import users as user_svc
 from bot.services.glass_msg import show_td_glass, upsert_hub
 from bot.texts import fa as T
@@ -135,15 +136,23 @@ async def send_play_invite(
             await _say(T.ALREADY_IN_GAME)
             return
         if game_engine.active_session_for_user(session, other):
-            await _say(T.INVITE_IN_GAME + " — الان مشغوله.")
+            await _say(T.INVITE_IN_GAME)
             return
         if invite_svc.pending_outgoing(session, me):
             await _say(T.INVITE_BUSY)
             return
+        if social_svc.either_blocked(session, me, other):
+            await _say(T.UP_BLOCKED_ACTION)
+            return
+        if social_svc.stranger_blocked_by_private(session, me, other):
+            await _say(T.ACCOUNT_PRIVATE_BLOCKED)
+            return
 
         inv = invite_svc.create_invite(session, from_user=me, to_user=other)
         invite_id = inv.id
-        me_name = user_svc.public_name(me)
+        from bot.services.profile_links import profile_command
+
+        me_profile = profile_command(me.id)
         other_name = user_svc.public_name(other)
         other_tg = other.telegram_id
 
@@ -162,10 +171,14 @@ async def send_play_invite(
     try:
         msg_to = await context.bot.send_message(
             other_tg,
-            T.INVITE_RECEIVED.format(name=me_name),
+            T.INVITE_RECEIVED.format(profile=me_profile),
             reply_markup=kb.play_invite_keyboard(invite_id, for_target=True),
         )
         to_mid = msg_to.message_id
+        try:
+            await context.bot.send_message(other_tg, T.SET_PRIVATE_HINT)
+        except Exception:
+            pass
     except Exception:
         logger.exception("failed to deliver play invite to %s", other_tg)
         to_mid = None
@@ -187,12 +200,8 @@ async def send_play_invite(
             inv.to_message_id = to_mid
 
     _schedule_expire(context, invite_id)
-    if notify:
-        # Already sent dedicated invite message; still ack on the source UI
-        try:
-            await notify(T.INVITE_SENT.format(name=other_name))
-        except Exception:
-            pass
+    # Success already sends a dedicated invite message — do not replace the
+    # search/results UI via notify (avoids replaying filter steps).
 
 
 async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -206,6 +215,29 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     _, action, sid = parts
     invite_id = int(sid)
     tg = update.effective_user
+
+    if action == "block":
+        with get_session() as session:
+            inv = invite_svc.get_invite(session, invite_id)
+            me = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+            if not inv or inv.to_user_id != me.id:
+                await query.answer(T.INVITE_GONE, show_alert=True)
+                return
+            other = session.get(User, inv.from_user_id)
+            if not other:
+                await query.answer(T.UP_GONE, show_alert=True)
+                return
+            status = social_svc.toggle_block(session, me, other)
+            msg = {
+                "blocked": T.UP_BLOCKED,
+                "unblocked": T.UP_UNBLOCKED,
+                "self": T.UP_SELF,
+            }.get(status, T.ERROR_GENERIC)
+            if status == "blocked" and inv.status == "pending":
+                invite_svc.set_status(session, inv, "rejected")
+        await query.answer(msg, show_alert=True)
+        return
+
     await query.answer()
 
     with get_session() as session:
@@ -311,17 +343,14 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         game_engine.add_player(session, game, fu)
         game_engine.add_player(session, game, tu)
         rnd = game_engine.start_two_player(session, game)
-        me_chooser = rnd.chooser_user_id == fu.id
-        turn = T.CHOOSE_TRUTH_OR_DARE.format(
-            chooser=from_name if me_chooser else to_name,
-            target=to_name if me_chooser else from_name,
-        )
-        turn = f"{T.ROUND_INFO.format(n=game.round_number, max=game.max_rounds)}\n{turn}"
+        me_picker = rnd.target_user_id == fu.id
+        turn = T.CHOOSE_TRUTH_OR_DARE
+        turn = f"{game_engine.format_round_info(game.round_number, game.max_rounds)}\n{turn}"
         game_id = game.id
-        chooser_uid = rnd.chooser_user_id
+        picker_uid = rnd.target_user_id
         from_hub = (
             T.MATCH_HUB.format(match_body=T.INVITE_ACCEPTED_FROM.format(name=to_name))
-            if me_chooser
+            if me_picker
             else T.MATCH_START_WAITER.format(
                 match_body=T.INVITE_ACCEPTED_FROM.format(name=to_name), turn=turn
             )
@@ -330,7 +359,7 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             T.MATCH_START_WAITER.format(
                 match_body=T.INVITE_ACCEPTED_TO, turn=turn
             )
-            if me_chooser
+            if me_picker
             else T.MATCH_HUB.format(match_body=T.INVITE_ACCEPTED_TO)
         )
 
@@ -348,22 +377,22 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception:
             pass
 
-    # Deliver game hubs
+    # Deliver game hubs — glass goes to answerer (picker)
     try:
         mid = await upsert_hub(
             context.bot,
             from_tg,
             from_hub,
-            reply_kb=kb.in_game_menu(is_chooser=me_chooser),
+            reply_kb=kb.in_game_menu(is_chooser=False),
             replace_keyboard=True,
         )
         glass_id = None
-        if me_chooser:
+        if me_picker:
             glass_id = await show_td_glass(
                 context.bot,
                 from_tg,
                 session_id=game_id,
-                chooser_id=chooser_uid,
+                chooser_id=picker_uid,
                 turn_text=turn,
             )
         st.set_state(from_tg, game_hub_message_id=mid, game_glass_message_id=glass_id)
@@ -375,16 +404,16 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             context.bot,
             to_tg,
             to_hub,
-            reply_kb=kb.in_game_menu(is_chooser=not me_chooser),
+            reply_kb=kb.in_game_menu(is_chooser=False),
             replace_keyboard=True,
         )
         glass_id = None
-        if not me_chooser:
+        if not me_picker:
             glass_id = await show_td_glass(
                 context.bot,
                 to_tg,
                 session_id=game_id,
-                chooser_id=chooser_uid,
+                chooser_id=picker_uid,
                 turn_text=turn,
             )
         st.set_state(to_tg, game_hub_message_id=mid, game_glass_message_id=glass_id)

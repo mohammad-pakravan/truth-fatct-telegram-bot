@@ -40,7 +40,7 @@ def presence_label(
 ) -> str:
     """Full status line for profiles / captions."""
     if in_game:
-        return "🎮 در حال بازی"
+        return "🎮 درحال بازی"
     if is_online(last_active_at, now=now):
         return "🟢 آنلاین"
     return format_last_seen(last_active_at, now=now)

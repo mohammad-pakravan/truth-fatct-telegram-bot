@@ -309,10 +309,11 @@ async def _enqueue_and_match(
 async def cancel_match_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_user:
         return
+    tg = update.effective_user
     with get_session() as session:
-        user = user_svc.get_or_create_user(session, update.effective_user.id)
+        user = user_svc.get_or_create_user(session, tg.id)
         ok = matchmaker.cancel(session, user)
-    st.clear(update.effective_user.id)
+    st.clear(tg.id)
     await update.message.reply_text(
         T.LEFT_QUEUE if ok else T.NOT_IN_QUEUE,
         reply_markup=main_menu(tg.id),

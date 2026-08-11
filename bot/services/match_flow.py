@@ -87,14 +87,17 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
             body_b = T.MATCH_FOUND + "\n" + _opponent_blurb(user_b, user_a)
 
         chooser_id = rnd.chooser_user_id if rnd else None
-        turn = T.CHOOSE_TRUTH_OR_DARE.format(chooser=chooser_name, target=target_name)
+        target_id = rnd.target_user_id if rnd else None
+        # Answerer (target) picks T/D for self; asker (chooser) waits then asks
+        turn = T.CHOOSE_TRUTH_OR_DARE
         if rnd:
-            turn = f"{T.ROUND_INFO.format(n=game.round_number, max=game.max_rounds)}\n{turn}"
+            turn = f"{game_engine.format_round_info(game.round_number, game.max_rounds)}\n{turn}"
 
         a_tg, b_tg = user_a.telegram_id, user_b.telegram_id
-        a_is_chooser = bool(rnd and rnd.chooser_user_id == user_a.id)
-        b_is_chooser = bool(rnd and rnd.chooser_user_id == user_b.id)
+        a_is_picker = bool(rnd and rnd.target_user_id == user_a.id)
+        b_is_picker = bool(rnd and rnd.target_user_id == user_b.id)
         game_id = game.id
+        is_anon = anonymous
 
     hubs = {
         a_tg: st.get(a_tg).get("game_hub_message_id"),
@@ -103,35 +106,41 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
     for tg_id in (a_tg, b_tg):
         st.clear(tg_id)
 
-    for tg_id, body, is_chooser, remind in (
-        (a_tg, body_a, a_is_chooser, remind_a),
-        (b_tg, body_b, b_is_chooser, remind_b),
+    for tg_id, body, is_picker, remind in (
+        (a_tg, body_a, a_is_picker, remind_a),
+        (b_tg, body_b, b_is_picker, remind_b),
     ):
         try:
+            if is_anon:
+                hub_base = f"{T.MATCH_CONNECTED_ANON}\n{T.MATCH_SAFETY_NOTICE}"
+            else:
+                hub_base = T.MATCH_HUB.format(match_body=body)
             if remind:
                 await context.bot.send_message(tg_id, remind)
-            if is_chooser and chooser_id:
-                hub_text = T.MATCH_HUB.format(match_body=body)
+            if is_picker and target_id:
                 mid = await upsert_hub(
                     context.bot,
                     tg_id,
-                    hub_text,
+                    hub_base,
                     message_id=hubs.get(tg_id),
-                    reply_kb=kb.in_game_menu(is_chooser=True),
+                    reply_kb=kb.in_game_menu(is_chooser=False),
                     replace_keyboard=True,
                 )
                 glass_id = await show_td_glass(
                     context.bot,
                     tg_id,
                     session_id=game_id,
-                    chooser_id=chooser_id,
+                    chooser_id=target_id,
                     turn_text=turn,
                 )
                 st.set_state(
                     tg_id, game_hub_message_id=mid, game_glass_message_id=glass_id
                 )
             else:
-                text = T.MATCH_START_WAITER.format(match_body=body, turn=turn)
+                if is_anon:
+                    text = f"{hub_base}\n\n{turn}\n⏱️ لطفا صبر کنید بازیکن مقابل انتخاب کند"
+                else:
+                    text = T.MATCH_START_WAITER.format(match_body=body, turn=turn)
                 mid = await upsert_hub(
                     context.bot,
                     tg_id,

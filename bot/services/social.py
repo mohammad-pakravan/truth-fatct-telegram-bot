@@ -46,6 +46,18 @@ def like_user(
     return "liked", int(liked.likes_count or 0)
 
 
+def is_known_contact(session: Session, a: User, b: User) -> bool:
+    """True if either side already has the other as a contact."""
+    return has_contact(session, a, b.id) or has_contact(session, b, a.id)
+
+
+def stranger_blocked_by_private(session: Session, sender: User, target: User) -> bool:
+    """Private accounts reject invites/DMs from non-contacts."""
+    if not bool(getattr(target, "account_private", False)):
+        return False
+    return not is_known_contact(session, target, sender)
+
+
 def add_contact(
     session: Session,
     owner: User,

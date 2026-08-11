@@ -10,14 +10,24 @@ from bot.services.questions import random_prompt
 from bot.services.users import public_name
 
 
+def format_round_info(round_number: int, max_rounds: int | None = None) -> str:
+    """Human-readable round line; endless when max_rounds is None/<=0."""
+    from bot.texts import fa as T
+
+    if max_rounds and max_rounds > 0:
+        return T.ROUND_INFO.format(n=round_number, max=max_rounds)
+    return T.ROUND_INFO_OPEN.format(n=round_number)
+
+
 def create_session(
     session: Session,
     game_type: str,
     starter: Optional[User] = None,
     chat_id: Optional[int] = None,
-    max_rounds: int = 10,
+    max_rounds: int = 0,
     inline_message_id: Optional[str] = None,
 ) -> GameSession:
+    """max_rounds <= 0 means unlimited rounds (end only via button)."""
     gs = GameSession(
         game_type=game_type,
         status="waiting",
@@ -151,9 +161,7 @@ def start_group_rotation(session: Session, game: GameSession) -> Round:
         raise ValueError("need_two")
     game.status = "playing"
     game.round_number = 1
-    # High cap — game ends via اتمام بازی
-    if game.max_rounds < 50:
-        game.max_rounds = 200
+    game.max_rounds = 0  # endless — ends via اتمام بازی
     turn = players[0]
     game.current_turn_user_id = turn.user_id
     game.current_target_user_id = turn.user_id
@@ -286,7 +294,8 @@ def advance_round(session: Session, game: GameSession) -> Optional[Round]:
     if not players:
         return None
 
-    if game.round_number >= game.max_rounds:
+    # max_rounds <= 0 → endless; otherwise stop when cap reached
+    if game.max_rounds and game.max_rounds > 0 and game.round_number >= game.max_rounds:
         return finish_game(session, game)
 
     # rotate: previous target becomes chooser; next player is target

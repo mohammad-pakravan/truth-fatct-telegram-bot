@@ -339,7 +339,7 @@ async def _show_report(query, data: str) -> None:
     # admin:rep:overview:day | admin:rep:users | admin:rep:provinces | admin:rep:sponsors:week
     kind = parts[2] if len(parts) > 2 else "overview"
     period = parts[3] if len(parts) > 3 else "day"
-    if period not in ("day", "week", "month"):
+    if period not in ("minute", "hour", "day", "week", "month"):
         period = "day"
 
     with get_session() as session:

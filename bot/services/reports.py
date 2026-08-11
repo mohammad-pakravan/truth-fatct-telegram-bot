@@ -24,13 +24,21 @@ def _to_utc_naive(dt: datetime) -> datetime:
 
 def period_since(key: str) -> tuple[str, datetime]:
     """
-    Calendar periods in Asia/Tehran, returned as UTC-naive for DB compare.
-    day   = from local midnight today
-    week  = from local midnight 6 days ago (7 calendar days including today)
-    month = from local midnight on the 1st of this month
+    Periods in Asia/Tehran, returned as UTC-naive for DB compare.
+    minute = last 1 minute
+    hour   = last 60 minutes
+    day    = from local midnight today
+    week   = from local midnight 6 days ago (7 calendar days including today)
+    month  = from local midnight on the 1st of this month
     """
     now_local = datetime.now(TEHRAN)
-    if key == "week":
+    if key == "minute":
+        start_local = now_local - timedelta(minutes=1)
+        label = "۱ دقیقه اخیر"
+    elif key == "hour":
+        start_local = now_local - timedelta(hours=1)
+        label = "۱ ساعت اخیر"
+    elif key == "week":
         start_local = (now_local - timedelta(days=6)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -169,7 +177,7 @@ def overview_report(session: Session, period_key: str) -> str:
         f"👥 کاربران\n"
         f"• کل: {total_users:,}\n"
         f"• ثبت‌نام جدید: {new_users:,}\n"
-        f"• تعامل‌داشته: {active:,}\n"
+        f"• کاربران فعال: {active:,}\n"
         f"  ↳ تازه‌وارد: {max(0, active - returning):,} | بازگشتی: {returning:,}\n"
         f"• پروفایل کامل: {complete:,}\n"
         f"• 👨 {males:,}  |  👩 {females:,}\n\n"
@@ -186,10 +194,13 @@ def overview_report(session: Session, period_key: str) -> str:
 
 
 def users_period_report(session: Session) -> str:
+    _, since_minute = period_since("minute")
+    _, since_hour = period_since("hour")
     _, since_day = period_since("day")
     _, since_week = period_since("week")
     _, since_month = period_since("month")
     day_label, _ = period_since("day")
+    now_local = datetime.now(TEHRAN)
 
     total = session.query(func.count(User.id)).scalar() or 0
     oldest = session.query(func.min(User.created_at)).scalar()
@@ -202,8 +213,8 @@ def users_period_report(session: Session) -> str:
         return (
             f"{title}\n"
             f"• ثبت‌نام جدید: {new:,}\n"
-            f"• تعامل با ربات: {active:,}\n"
-            f"  ↳ تازه‌وارد بین تعامل‌ها: {active_new:,} | بازگشتی: {returning:,}"
+            f"• کاربران فعال: {active:,}\n"
+            f"  ↳ تازه‌وارد: {active_new:,} | بازگشتی: {returning:,}"
         )
 
     oldest_txt = ""
@@ -212,16 +223,18 @@ def users_period_report(session: Session) -> str:
         oldest_txt = f"\nاولین کاربر: {oldest_local.strftime('%Y/%m/%d')}"
 
     return (
-        f"🆕 کاربران — ساعت تهران\n"
+        f"🆕 کاربران فعال — ساعت تهران\n"
+        f"⏱ الان: {now_local.strftime('%Y/%m/%d %H:%M')}\n"
         f"{'─' * 18}\n\n"
+        f"{block('⏱ ۱ دقیقه اخیر', since_minute)}\n\n"
+        f"{block('🕐 ۱ ساعت اخیر', since_hour)}\n\n"
         f"{block(f'📅 {day_label}', since_day)}\n\n"
         f"{block('📅 ۷ روز اخیر', since_week)}\n\n"
         f"{block('📅 ماه جاری', since_month)}\n\n"
         f"📦 کل کاربران ثبت‌شده: {total:,}"
         f"{oldest_txt}\n\n"
-        f"ℹ️ «تعامل» یعنی حداقل یک‌بار با ربات کار کرده "
-        f"(نه لزوماً بازی کامل).\n"
-        f"اگر ربات جدیده، عدد تعامل ≈ کل طبیعی‌ه."
+        f"ℹ️ «فعال» یعنی در آن بازه با ربات تعامل داشته "
+        f"(منو، چت، بازی، جستجو و … — بر اساس last_active)."
     )
 
 

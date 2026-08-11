@@ -47,6 +47,11 @@ class User(Base):
     show_private_id: Mapped[bool] = mapped_column(Boolean, default=False)  # default OFF
     likes_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Account privacy (settings hub)
+    account_private: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_profile_visit: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_follow: Mapped[bool] = mapped_column(Boolean, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -88,7 +93,7 @@ class GameSession(Base):
     current_turn_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     current_target_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     round_number: Mapped[int] = mapped_column(Integer, default=0)
-    max_rounds: Mapped[int] = mapped_column(Integer, default=10)
+    max_rounds: Mapped[int] = mapped_column(Integer, default=0)
     # channel answer mode: buttons | comments
     channel_answer_mode: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     channel_options_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

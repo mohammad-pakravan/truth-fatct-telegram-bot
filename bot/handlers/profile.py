@@ -12,6 +12,21 @@ from bot.texts import fa as T
 from bot.handlers import wizard
 
 
+def _is_skip_photo(text: str) -> bool:
+    """Match skip-photo button with/without emoji variation selector."""
+    norm = (text or "").replace("\ufe0f", "").strip()
+    return norm in {
+        T.BTN_SKIP_PHOTO.replace("\ufe0f", ""),
+        T.BTN_SKIP.replace("\ufe0f", ""),
+        "⏭ فعلاً بدون عکس",
+    }
+
+
+async def _restore_profile_hub(message, tg_id: int, text: str = "باشه ✅") -> None:
+    st.set_state(tg_id, mode="hub_profile", waiting=None)
+    await message.reply_text(text, reply_markup=kb.hub_profile_menu())
+
+
 async def _send_edit_card(message, context, tg_user) -> None:
     with get_session() as session:
         user = user_svc.get_or_create_user(
@@ -47,8 +62,7 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     if text == T.BTN_BACK:
-        st.set_state(tg.id, mode="hub_profile", waiting=None)
-        await update.message.reply_text(T.HUB_PROFILE_TEXT, reply_markup=kb.hub_profile_menu())
+        await _restore_profile_hub(update.message, tg.id, T.HUB_PROFILE_TEXT)
         return
 
     if text == T.BTN_SHOW_PROFILE:
@@ -59,9 +73,8 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await wizard.start_wizard(update, context, force=True)
         return
 
-    if text == T.BTN_SKIP_PHOTO and waiting == "photo":
-        st.set_state(tg.id, waiting=None)
-        await update.message.reply_text("عکس تغییر نکرد.")
+    if _is_skip_photo(text) and waiting == "photo":
+        await _restore_profile_hub(update.message, tg.id, "عکس تغییر نکرد.")
         return
 
     waiting = st.get(tg.id).get("waiting")
@@ -73,21 +86,18 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
             user.display_name = text[:128]
             new_val = user.display_name
-        st.set_state(tg.id, waiting=None)
-        await update.message.reply_text(f"اسم عوض شد به «{new_val}»")
+        await _restore_profile_hub(update.message, tg.id, f"اسم عوض شد به «{new_val}»")
         return
     if waiting == "nickname":
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
             if text in {"-", "—", "پاک", "حذف"}:
                 user.nickname = None
-                st.set_state(tg.id, waiting=None)
-                await update.message.reply_text(T.NICKNAME_CLEARED)
+                await _restore_profile_hub(update.message, tg.id, T.NICKNAME_CLEARED)
                 return
             user.nickname = text[:64]
             nick = user.nickname
-        st.set_state(tg.id, waiting=None)
-        await update.message.reply_text(T.NICKNAME_SAVED.format(nick=nick))
+        await _restore_profile_hub(update.message, tg.id, T.NICKNAME_SAVED.format(nick=nick))
         return
     if waiting == "city":
         if len(text) < 2:
@@ -97,8 +107,7 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
             user.city = text[:64]
             new_val = user.city
-        st.set_state(tg.id, waiting=None)
-        await update.message.reply_text(f"شهر عوض شد به «{new_val}»")
+        await _restore_profile_hub(update.message, tg.id, f"شهر عوض شد به «{new_val}»")
         return
     if waiting == "age":
         from bot.config import MAX_USER_AGE, MIN_USER_AGE
@@ -110,8 +119,7 @@ async def profile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
             user.age = age
-        st.set_state(tg.id, waiting=None)
-        await update.message.reply_text(f"سن عوض شد به «{age}»")
+        await _restore_profile_hub(update.message, tg.id, f"سن عوض شد به «{age}»")
         return
 
 
@@ -179,7 +187,8 @@ async def profile_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         try:
             await query.edit_message_text(f"جنسیت عوض شد به «{label}»")
         except Exception:
-            await msg.reply_text(f"جنسیت عوض شد به «{label}»")
+            pass
+        await _restore_profile_hub(msg, tg.id, f"جنسیت عوض شد به «{label}»")
         return
 
     if data.startswith("pprov:"):
@@ -205,14 +214,49 @@ async def profile_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         try:
             await query.edit_message_text(f"استان عوض شد به «{province}»")
         except Exception:
-            await msg.reply_text(f"استان عوض شد به «{province}»")
+            pass
+        await _restore_profile_hub(msg, tg.id, f"استان عوض شد به «{province}»")
         return
 
     if data.startswith("set:"):
         field = data.split(":", 1)[1]
         with get_session() as session:
             user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
-            user_svc.toggle_setting(user, field)
+            try:
+                user_svc.toggle_setting(user, field)
+            except ValueError:
+                await query.answer("تنظیم نامعتبر.", show_alert=True)
+                return
             markup = kb.settings_keyboard(user)
         await query.edit_message_text(T.SETTINGS_MENU, reply_markup=markup)
         return
+
+
+async def set_private_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not update.effective_user:
+        return
+    tg = update.effective_user
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+        if user_svc.is_account_private(user):
+            await update.message.reply_text(T.ACCOUNT_ALREADY_PRIVATE)
+            return
+        user_svc.set_account_private(user, True)
+    await update.message.reply_text(T.ACCOUNT_SET_PRIVATE_OK)
+
+
+async def privacy_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query or not query.data or not update.effective_user:
+        return
+    tg = update.effective_user
+    if query.data != "priv:on":
+        await query.answer()
+        return
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+        if user_svc.is_account_private(user):
+            await query.answer(T.ACCOUNT_ALREADY_PRIVATE, show_alert=True)
+            return
+        user_svc.set_account_private(user, True)
+    await query.answer(T.ACCOUNT_SET_PRIVATE_OK, show_alert=True)

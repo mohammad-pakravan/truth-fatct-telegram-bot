@@ -17,27 +17,34 @@ async def upsert_hub(
     replace_keyboard: bool = False,
 ) -> int:
     """
-    Status hub: match info / waiting / answering.
-    Reply keyboard (profile / end / skip) lives here.
-    Prefers edit-in-place; only resends when the reply keyboard must change.
+    Status hub: prefer edit-in-place so searching/waiting messages update
+    instead of stacking. Never deletes Q&A history messages.
     """
-    if message_id is not None and not replace_keyboard:
+    if message_id is not None:
         try:
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
                 text=text,
             )
+            if replace_keyboard and reply_kb is not None:
+                # ReplyKeyboard can't be set via edit — push it with a
+                # disposable message, then remove that bubble.
+                try:
+                    tmp = await bot.send_message(
+                        chat_id, "\u2060", reply_markup=reply_kb
+                    )
+                    try:
+                        await bot.delete_message(chat_id, tmp.message_id)
+                    except Exception:
+                        pass
+                except Exception:
+                    logger.debug("keyboard bump failed", exc_info=True)
             return message_id
         except Exception:
             logger.debug("hub edit failed chat=%s mid=%s", chat_id, message_id, exc_info=True)
 
     sent = await bot.send_message(chat_id, text, reply_markup=reply_kb)
-    if message_id is not None and message_id != sent.message_id:
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=message_id)
-        except Exception:
-            logger.debug("old hub delete failed", exc_info=True)
     return sent.message_id
 
 
@@ -50,8 +57,8 @@ async def upsert_action(
     inline_kb=None,
 ) -> int:
     """
-    Action strip under the hub: truth/dare glass, then ask-prompt, then 'sent'.
-    Same message is edited through the chooser flow — no delete/flash.
+    Action strip: truth/dare glass, ask-prompt, etc.
+    Edits in place when possible; never deletes prior messages.
     """
     if message_id is not None:
         try:
@@ -69,6 +76,17 @@ async def upsert_action(
     return sent.message_id
 
 
+async def _strip_inline(bot, chat_id: int, message_id: int | None) -> None:
+    if not message_id:
+        return
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=chat_id, message_id=message_id, reply_markup=None
+        )
+    except Exception:
+        logger.debug("strip inline failed mid=%s", message_id, exc_info=True)
+
+
 async def show_td_glass(
     bot,
     chat_id: int,
@@ -77,12 +95,33 @@ async def show_td_glass(
     chooser_id: int,
     turn_text: str,
     glass_message_id: int | None = None,
+    bump: bool = True,
+    peer_answer: str | None = None,
+    clear_hub: bool = False,
 ) -> int:
-    """Show / refresh the truth-dare action message."""
+    """
+    Show truth-dare glass for the answerer.
+
+    bump=True: send a fresh message at the bottom (old glass keeps text, buttons stripped).
+    Never deletes hub / Q&A history.
+    """
     from bot import keyboards as kb
     from bot.texts import fa as T
 
-    body = T.TURN_ACTION.format(turn=turn_text)
+    if peer_answer:
+        body = T.TURN_WITH_PEER_ANSWER.format(answer=peer_answer, turn=turn_text)
+    else:
+        body = T.TURN_ACTION.format(turn=turn_text)
+
+    # clear_hub used to delete history — now only forget the tracked id.
+    if clear_hub:
+        st.set_state(chat_id, game_hub_message_id=None)
+
+    if bump and glass_message_id:
+        await _strip_inline(bot, chat_id, glass_message_id)
+        glass_message_id = None
+        st.set_state(chat_id, game_glass_message_id=None)
+
     return await upsert_action(
         bot,
         chat_id,
@@ -93,21 +132,13 @@ async def show_td_glass(
 
 
 async def clear_td_glass(bot, chat_id: int, glass_message_id: int | None = None) -> None:
-    """Drop the action message when the game ends or role no longer needs it."""
+    """Remove inline buttons from the action message — do not delete chat history."""
     mid = glass_message_id
     if mid is None:
         mid = st.get(chat_id).get("game_glass_message_id")
     if not mid:
         return
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=mid)
-    except Exception:
-        try:
-            await bot.edit_message_reply_markup(
-                chat_id=chat_id, message_id=mid, reply_markup=None
-            )
-        except Exception:
-            logger.debug("action clear failed", exc_info=True)
+    await _strip_inline(bot, chat_id, mid)
     st.set_state(chat_id, game_glass_message_id=None)
 
 

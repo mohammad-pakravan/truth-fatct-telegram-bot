@@ -2,9 +2,10 @@
 
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot import keyboards as kb
 from bot import state as st
 from bot.db import get_session
 from bot.models import User, UserReport
@@ -35,6 +36,42 @@ async def flush_online_notifies(
             await context.bot.send_message(tid, T.UP_ONLINE_PING.format(name=name))
         except Exception:
             pass
+
+
+async def maybe_notify_profile_visit(
+    context: ContextTypes.DEFAULT_TYPE, viewer: User, target: User
+) -> None:
+    if viewer.id == target.id:
+        return
+    if not bool(getattr(target, "notify_profile_visit", False)):
+        return
+    from bot.services.profile_links import profile_command
+
+    try:
+        await context.bot.send_message(
+            target.telegram_id,
+            T.PROFILE_VISIT_ALARM.format(profile=profile_command(viewer.id)),
+        )
+    except Exception:
+        pass
+
+
+async def maybe_notify_follow(
+    context: ContextTypes.DEFAULT_TYPE, follower: User, followed: User
+) -> None:
+    if follower.id == followed.id:
+        return
+    if not bool(getattr(followed, "notify_follow", False)):
+        return
+    from bot.services.profile_links import profile_command
+
+    try:
+        await context.bot.send_message(
+            followed.telegram_id,
+            T.FOLLOW_ALARM.format(profile=profile_command(follower.id)),
+        )
+    except Exception:
+        pass
 
 
 async def _refresh_markup(query, session, me: User, target: User) -> None:
@@ -134,8 +171,8 @@ async def on_uprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             if not other:
                 await query.answer(T.UP_GONE, show_alert=True)
                 return
-            social_svc.add_contact(session, me, other)
-            social_svc.add_contact(session, other, me)
+            status_me = social_svc.add_contact(session, me, other)
+            status_other = social_svc.add_contact(session, other, me)
             await query.answer(T.UP_FRIEND_ACCEPTED, show_alert=True)
             try:
                 await query.edit_message_text(T.UP_FRIEND_ACCEPTED)
@@ -148,6 +185,10 @@ async def on_uprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             except Exception:
                 pass
+            if status_me == "added":
+                await maybe_notify_follow(context, me, other)
+            if status_other == "added":
+                await maybe_notify_follow(context, other, me)
             return
 
         if action == "friend_no":
@@ -165,6 +206,9 @@ async def on_uprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             if social_svc.either_blocked(session, me, target):
                 await query.answer(T.UP_BLOCKED_ACTION, show_alert=True)
                 return
+            if social_svc.stranger_blocked_by_private(session, me, target):
+                await query.answer(T.ACCOUNT_PRIVATE_BLOCKED, show_alert=True)
+                return
             await query.answer()
             from bot.handlers import play_invite
 
@@ -177,6 +221,9 @@ async def on_uprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 return
             if social_svc.either_blocked(session, me, target):
                 await query.answer(T.UP_BLOCKED_ACTION, show_alert=True)
+                return
+            if social_svc.stranger_blocked_by_private(session, me, target):
+                await query.answer(T.ACCOUNT_PRIVATE_BLOCKED, show_alert=True)
                 return
             await query.answer()
             if target.show_private_id and target.username:
@@ -297,7 +344,13 @@ async def uprofile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
             st.set_state(tg.id, waiting=None, uprofile_dm_to=None)
             await update.message.reply_text(T.UP_BLOCKED_ACTION)
             return True
-        me_name = user_svc.public_name(me)
+        if social_svc.stranger_blocked_by_private(session, me, target):
+            st.set_state(tg.id, waiting=None, uprofile_dm_to=None)
+            await update.message.reply_text(T.ACCOUNT_PRIVATE_BLOCKED)
+            return True
+        from bot.services.profile_links import profile_command
+
+        me_profile = profile_command(me.id)
         to_tg = target.telegram_id
         from_id = me.id
 
@@ -305,11 +358,13 @@ async def uprofile_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
     try:
         await context.bot.send_message(
             to_tg,
-            T.UP_DM_RECV.format(name=me_name, text=text),
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("📝 پاسخ", callback_data=f"up:dm:{from_id}")]]
-            ),
+            T.UP_DM_RECV.format(profile=me_profile, text=text),
+            reply_markup=kb.dm_received_keyboard(from_id),
         )
+        try:
+            await context.bot.send_message(to_tg, T.SET_PRIVATE_HINT)
+        except Exception:
+            pass
     except Exception:
         await update.message.reply_text(T.UP_DM_FAIL)
         return True
@@ -345,3 +400,24 @@ async def show_user_profile(
         session.expunge(me)
         session.expunge(target)
     await send_public_profile(message, context, viewer=me, target=target)
+    if me.id != target.id:
+        await maybe_notify_profile_visit(context, me, target)
+
+
+async def on_profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /Profile_<code> from text or photo caption (inline CachedPhoto)."""
+    if not update.message or not update.effective_user:
+        return
+    from bot.services.profile_links import decode_profile_code, parse_profile_command
+
+    raw = (update.message.text or update.message.caption or "").strip()
+    # Caption may be only the command, or command on the first line.
+    first = raw.splitlines()[0].strip() if raw else ""
+    code = parse_profile_command(first) or parse_profile_command(raw)
+    if not code:
+        return
+    uid = decode_profile_code(code)
+    if not uid:
+        await update.message.reply_text(T.UP_GONE)
+        return
+    await show_user_profile(update, context, uid)

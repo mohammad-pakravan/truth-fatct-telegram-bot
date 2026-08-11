@@ -20,6 +20,7 @@ def main_menu(telegram_id: int | None = None, *, is_admin: bool | None = None) -
     rows = [
         [KeyboardButton(T.BTN_ADVANCED)],
         [KeyboardButton(T.BTN_ANON), KeyboardButton(T.BTN_NEARBY)],
+        [KeyboardButton(T.BTN_FAKE)],
         [KeyboardButton(T.BTN_HUB_PROFILE)],
         [KeyboardButton(T.BTN_HUB_FRIENDS)],
     ]
@@ -52,6 +53,21 @@ def in_game_menu(
     if awaiting_answer:
         rows.append([KeyboardButton(T.BTN_SKIP)])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+def end_game_confirm_keyboard(session_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    T.BTN_END_YES, callback_data=f"endok:{session_id}"
+                ),
+                InlineKeyboardButton(
+                    T.BTN_END_NO, callback_data=f"endno:{session_id}"
+                ),
+            ]
+        ]
+    )
 
 
 def private_chat_menu() -> ReplyKeyboardMarkup:
@@ -134,9 +150,9 @@ def back_menu() -> ReplyKeyboardMarkup:
 def hub_profile_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(T.BTN_SHOW_PROFILE), KeyboardButton(T.BTN_PROFILE)],
+            [KeyboardButton(T.BTN_SHOW_PROFILE)],
             [KeyboardButton(T.BTN_GAME_SETTINGS), KeyboardButton(T.BTN_HISTORY)],
-            [KeyboardButton(T.BTN_RUN_WIZARD), KeyboardButton(T.BTN_HELP)],
+            [KeyboardButton(T.BTN_HELP)],
             [KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
@@ -175,7 +191,6 @@ def profile_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(T.BTN_SHOW_PROFILE)],
-            [KeyboardButton(T.BTN_RUN_WIZARD)],
             [KeyboardButton(T.BTN_EDIT_NAME), KeyboardButton(T.BTN_EDIT_PHOTO)],
             [KeyboardButton(T.BTN_EDIT_PROVINCE), KeyboardButton(T.BTN_EDIT_CITY)],
             [KeyboardButton(T.BTN_EDIT_AGE), KeyboardButton(T.BTN_EDIT_GENDER)],
@@ -188,7 +203,10 @@ def profile_menu() -> ReplyKeyboardMarkup:
 
 def skip_photo_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [[KeyboardButton(T.BTN_SKIP_PHOTO)]],
+        [
+            [KeyboardButton(T.BTN_SKIP_PHOTO)],
+            [KeyboardButton(T.BTN_BACK)],
+        ],
         resize_keyboard=True,
     )
 
@@ -390,20 +408,50 @@ def invite_display_mode() -> InlineKeyboardMarkup:
     )
 
 
-def truth_dare(session_id: int, chooser_id: int) -> InlineKeyboardMarkup:
-    """Glass buttons: truth / dare only. Profile/end stay on reply keyboard."""
+def truth_dare(session_id: int, picker_id: int) -> InlineKeyboardMarkup:
+    """Glass: answerer picks truth/dare for themselves (picker_id = target)."""
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    T.BTN_TRUTH, callback_data=f"td:{session_id}:{chooser_id}:truth"
+                    T.BTN_TRUTH, callback_data=f"td:{session_id}:{picker_id}:truth"
                 ),
                 InlineKeyboardButton(
-                    T.BTN_DARE, callback_data=f"td:{session_id}:{chooser_id}:dare"
+                    T.BTN_DARE, callback_data=f"td:{session_id}:{picker_id}:dare"
                 ),
             ],
         ]
     )
+
+
+def asker_bank_keyboard(session_id: int, choice: str) -> InlineKeyboardMarkup:
+    """After opponent picked truth/dare: asker must pick a bank category."""
+    if choice == "truth":
+        cats = [
+            ("tf18", T.CAT_TF18),
+            ("tm18", T.CAT_TM18),
+            ("tn", T.CAT_TN),
+            ("lucky", T.CAT_LUCKY),
+        ]
+    else:
+        cats = [
+            ("df18", T.CAT_DF18),
+            ("dm18", T.CAT_DM18),
+            ("dn", T.CAT_DN),
+            ("lucky", T.CAT_LUCKY),
+        ]
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for key, label in cats:
+        row.append(
+            InlineKeyboardButton(label, callback_data=f"1vq:{session_id}:{key}")
+        )
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
 
 
 def skip_answer(session_id: int) -> InlineKeyboardMarkup:
@@ -878,6 +926,10 @@ def admin_reports_keyboard(period: str = "day") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
+                InlineKeyboardButton(mark("minute", "دقیقه"), callback_data="admin:rep:overview:minute"),
+                InlineKeyboardButton(mark("hour", "ساعت"), callback_data="admin:rep:overview:hour"),
+            ],
+            [
                 InlineKeyboardButton(mark("day", "امروز"), callback_data="admin:rep:overview:day"),
                 InlineKeyboardButton(mark("week", "هفته"), callback_data="admin:rep:overview:week"),
                 InlineKeyboardButton(mark("month", "ماه"), callback_data="admin:rep:overview:month"),
@@ -957,7 +1009,15 @@ def play_invite_keyboard(invite_id: int, *, for_target: bool) -> InlineKeyboardM
                     InlineKeyboardButton(
                         T.INVITE_REJECT, callback_data=f"invite:reject:{invite_id}"
                     ),
-                ]
+                ],
+                [
+                    InlineKeyboardButton(
+                        T.BTN_BLOCK_USER, callback_data=f"invite:block:{invite_id}"
+                    ),
+                    InlineKeyboardButton(
+                        T.BTN_SET_PRIVATE, callback_data="priv:on"
+                    ),
+                ],
             ]
         )
     return InlineKeyboardMarkup(
@@ -967,6 +1027,20 @@ def play_invite_keyboard(invite_id: int, *, for_target: bool) -> InlineKeyboardM
                     T.INVITE_CANCEL, callback_data=f"invite:cancel:{invite_id}"
                 )
             ]
+        ]
+    )
+
+
+def dm_received_keyboard(from_user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📝 پاسخ", callback_data=f"up:dm:{from_user_id}")],
+            [
+                InlineKeyboardButton(
+                    T.BTN_BLOCK_USER, callback_data=f"up:block:{from_user_id}"
+                ),
+                InlineKeyboardButton(T.BTN_SET_PRIVATE, callback_data="priv:on"),
+            ],
         ]
     )
 
@@ -982,49 +1056,33 @@ def settings_keyboard(user) -> InlineKeyboardMarkup:
     def flag(v: bool) -> str:
         return T.ON if v else T.OFF
 
-    nick = user.nickname or T.SETTINGS_NICK_EMPTY
+    account_state = (
+        T.SETTING_ACCOUNT_PRIVATE
+        if bool(getattr(user, "account_private", False))
+        else T.SETTING_ACCOUNT_PUBLIC
+    )
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    f"درخواست غریبه: {flag(user.allow_stranger_requests)}",
-                    callback_data="set:allow_stranger_requests",
+                    T.SETTING_ACCOUNT.format(state=account_state),
+                    callback_data="set:account_private",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    f"درخواست بدون هویت: {flag(user.allow_anonymous_requests)}",
-                    callback_data="set:allow_anonymous_requests",
+                    T.SETTING_VISIT_ALARM.format(
+                        state=flag(bool(getattr(user, "notify_profile_visit", False)))
+                    ),
+                    callback_data="set:notify_profile_visit",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    f"نمایش هویت به طرف: {flag(user.show_identity)}",
-                    callback_data="set:show_identity",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    f"نمایش سن: {flag(user.show_age)}",
-                    callback_data="set:show_age",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    f"نمایش عکس پروفایل: {flag(user.show_photo)}",
-                    callback_data="set:show_photo",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    f"نمایش آیدی خصوصی: {flag(user.show_private_id)}",
-                    callback_data="set:show_private_id",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    T.SETTINGS_NICK_BTN.format(nick=nick[:24]),
-                    callback_data="pedit:nickname",
+                    T.SETTING_FOLLOW_ALARM.format(
+                        state=flag(bool(getattr(user, "notify_follow", False)))
+                    ),
+                    callback_data="set:notify_follow",
                 )
             ],
         ]
