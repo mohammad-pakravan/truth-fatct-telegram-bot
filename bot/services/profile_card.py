@@ -45,6 +45,20 @@ def profile_fields_inline() -> InlineKeyboardMarkup:
     )
 
 
+def _caption_value(value: str | int | None) -> str:
+    """Wrap LTR fragments so mixed Persian/Latin captions stay aligned in Telegram."""
+    if value is None or value == "":
+        return "—"
+    text = str(value)
+    if any(c.isascii() and (c.isalnum() or c in "@._-") for c in text):
+        return f"\u2066{text}\u2069"
+    return text
+
+
+def _caption_line(label: str, value: str | int | None) -> str:
+    return f"\u200f{label}{_caption_value(value)}"
+
+
 def format_card_caption(user: User, *, intro: Optional[str] = None) -> str:
     """Own profile card caption."""
     return format_public_caption(user, apply_privacy=False, intro=intro, own=True)
@@ -65,30 +79,31 @@ def format_public_caption(
 
     lines: list[str] = []
     if intro:
-        lines.append(intro.strip())
+        lines.append(f"\u200f{intro.strip()}")
         lines.append("")
 
     name = user.display_name or "—"
-    lines.append(f"👤 | نام: {name}")
+    lines.append(_caption_line("👤 | نام: ", name))
     if show_identity:
-        lines.append(f"👥 | جنسیت: {gender_map.get(user.gender or '', '—')}")
-        lines.append(f"🌇 | استان: {user.province or '—'}")
-        lines.append(f"🏙️ | شهر: {user.city or '—'}")
+        lines.append(
+            _caption_line("👥 | جنسیت: ", gender_map.get(user.gender or "", "—"))
+        )
+        lines.append(_caption_line("🌇 | استان: ", user.province or "—"))
+        lines.append(_caption_line("🏙️ | شهر: ", user.city or "—"))
     else:
-        lines.append("👥 | هویت: مخفی")
+        lines.append("\u200f👥 | هویت: مخفی")
     if show_age:
-        lines.append(f"👶 | سن: {user.age if user.age is not None else '—'}")
+        lines.append(_caption_line("👶 | سن: ", user.age if user.age is not None else "—"))
     elif not show_identity:
         pass
 
     from bot.services.presence import presence_label
 
-    lines.append(
-        presence_label(last_active_at=user.last_active_at, in_game=in_game)
-    )
+    status = presence_label(last_active_at=user.last_active_at, in_game=in_game)
+    lines.append(f"\u200f{status}")
     if own:
         likes = int(getattr(user, "likes_count", 0) or 0)
-        lines.append(f"❤️ لایک: {likes}")
+        lines.append(_caption_line("❤️ لایک: ", likes))
     return "\n".join(lines)
 
 
@@ -182,24 +197,20 @@ async def _send_photo_card(
     *,
     force_photo: bool = False,
 ) -> bool:
-    show_photo = force_photo or bool(getattr(user, "show_photo", True))
-    file_id = user.profile_photo_file_id if (show_photo or force_photo) else None
+    wants_photo = force_photo or bool(getattr(user, "show_photo", False))
 
-    if not file_id:
-        from bot.services import placeholders as ph_svc
-
-        file_id = ph_svc.get_cached_file_id(user.gender if show_photo or force_photo else None)
-
-    if file_id:
+    if wants_photo and user.profile_photo_file_id:
         try:
             await message.reply_photo(
-                photo=file_id, caption=caption[:1024], reply_markup=markup
+                photo=user.profile_photo_file_id,
+                caption=caption[:1024],
+                reply_markup=markup,
             )
             return True
         except Exception:
             pass
 
-    if (show_photo or force_photo) and user.profile_photo_key:
+    if wants_photo and user.profile_photo_key:
         data = storage.download_bytes(user.profile_photo_key)
         if data:
             try:
@@ -216,6 +227,20 @@ async def _send_photo_card(
                 return True
             except Exception:
                 pass
+
+    from bot.services import placeholders as ph_svc
+
+    placeholder_id = ph_svc.get_cached_file_id(
+        user.gender if wants_photo else None
+    )
+    if placeholder_id:
+        try:
+            await message.reply_photo(
+                photo=placeholder_id, caption=caption[:1024], reply_markup=markup
+            )
+            return True
+        except Exception:
+            pass
 
     await message.reply_text(caption, reply_markup=markup)
     return False

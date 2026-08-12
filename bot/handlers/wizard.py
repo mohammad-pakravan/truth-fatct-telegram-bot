@@ -262,13 +262,14 @@ async def _save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         try:
             key = storage.upload_profile_photo(bytes(data), user_id=user.id)
             user.profile_photo_key = key
-            # Re-cache telegram file_id when we send compressed card
-            user.profile_photo_file_id = None
+            user.profile_photo_file_id = photo.file_id
+            user.show_photo = True
             if old_key and old_key != key:
                 storage.delete_object(old_key)
         except Exception:
             logger.exception("MinIO upload failed; keeping telegram file_id only")
             user.profile_photo_file_id = photo.file_id
+            user.show_photo = True
 
 
 async def _finish_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

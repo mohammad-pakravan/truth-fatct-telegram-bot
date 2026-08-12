@@ -399,6 +399,17 @@ async def show_user_profile(
             return
         session.expunge(me)
         session.expunge(target)
+    if me.id == target.id:
+        from bot.services.profile_card import send_profile_card
+
+        await send_profile_card(
+            message,
+            context,
+            target,
+            with_main_menu=False,
+            edit_mode=True,
+        )
+        return
     await send_public_profile(message, context, viewer=me, target=target)
     if me.id != target.id:
         await maybe_notify_profile_visit(context, me, target)
