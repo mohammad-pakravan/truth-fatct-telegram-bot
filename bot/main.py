@@ -49,11 +49,13 @@ from bot.services import placeholders as ph_svc
 from bot.services import storage
 from bot.texts import fa as T
 from bot import state as st
+from bot.filelog import setup_file_logging
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
     level=logging.INFO,
 )
+_log_path = setup_file_logging()
 logger = logging.getLogger(__name__)
 
 # Browse / settings OK without full profile; game & chat need it
@@ -247,6 +249,10 @@ async def post_init(app: Application) -> None:
         )
 
 
+async def post_stop(app: Application) -> None:
+    logger.warning("Bot stopping (post_stop)")
+
+
 def build_app(token: str | None = None) -> Application:
     request_kwargs = {
         "connect_timeout": TELEGRAM_CONNECT_TIMEOUT,
@@ -265,6 +271,7 @@ def build_app(token: str | None = None) -> Application:
         .request(request)
         .get_updates_request(HTTPXRequest(**request_kwargs))
         .post_init(post_init)
+        .post_stop(post_stop)
         .build()
     )
     app.add_error_handler(on_error)
@@ -351,16 +358,25 @@ def build_app(token: str | None = None) -> Application:
 
 def main() -> None:
     app = build_app()
-    logger.info("Bot starting…")
-    app.run_polling(
-        allowed_updates=[
-            "message",
-            "callback_query",
-            "channel_post",
-            "inline_query",
-            "chosen_inline_result",
-        ]
-    )
+    logger.info("Bot starting… file log: %s (last %s lines)", _log_path, 100)
+    try:
+        app.run_polling(
+            allowed_updates=[
+                "message",
+                "callback_query",
+                "channel_post",
+                "inline_query",
+                "chosen_inline_result",
+            ]
+        )
+    except KeyboardInterrupt:
+        logger.warning("Bot stopped by KeyboardInterrupt")
+        raise
+    except Exception:
+        logger.exception("Bot crashed in run_polling")
+        raise
+    finally:
+        logger.warning("Bot main() exited")
 
 
 if __name__ == "__main__":

@@ -61,6 +61,8 @@
       MINIO_BUCKET: ${MINIO_BUCKET:-profiles}
       MINIO_SECURE: "false"
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+    volumes:
+      - ./data/logs:/app/data/logs
     depends_on:
       db:
         condition: service_healthy
