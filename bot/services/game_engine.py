@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session, joinedload
 from bot.models import GamePlayer, GameSession, Round, User
 from bot.services.questions import random_prompt
 from bot.services.users import public_name
+
+DEFAULT_TWO_PLAYER_ROUNDS = 10
 
 
 def format_round_info(round_number: int, max_rounds: int | None = None) -> str:
@@ -39,6 +41,10 @@ def create_session(
     session.add(gs)
     session.flush()
     return gs
+
+
+def two_player_round_cap(game_type: str) -> int:
+    return 0 if game_type in {"group", "channel"} else DEFAULT_TWO_PLAYER_ROUNDS
 
 
 def find_registering_group(
@@ -224,17 +230,21 @@ def apply_choice(
     """Set truth/dare. If prompt/media omitted, pick a random bank prompt."""
     rnd.choice = choice
     text = (prompt or "").strip()
+    source = "custom" if (text or file_id) else "bank"
     if not text and not file_id:
         target = session.get(User, rnd.target_user_id) if rnd.target_user_id else None
+        seen = used_prompts(session, rnd.session_id)
         text = random_prompt(
             choice,  # type: ignore[arg-type]
             gender=getattr(target, "gender", None),
             age=getattr(target, "age", None),
             session=session,
+            exclude=seen,
         )
     rnd.prompt_text = text or None
     rnd.prompt_media_type = media_type if file_id else None
     rnd.prompt_file_id = file_id
+    rnd.prompt_source = source
     if text:
         return text
     labels = {
@@ -254,12 +264,15 @@ def apply_category_prompt(
     """Apply a group category; returns (category_label, prompt)."""
     from bot.services.questions import prompt_for_category
 
-    kind, label, text = prompt_for_category(session, cat_key)
+    kind, label, text = prompt_for_category(
+        session, cat_key, exclude=used_prompts(session, rnd.session_id)
+    )
     rnd.choice = kind
     rnd.category_key = cat_key
     rnd.prompt_text = text
     rnd.prompt_media_type = None
     rnd.prompt_file_id = None
+    rnd.prompt_source = "bank"
     return label, text
 
 
@@ -269,6 +282,16 @@ def set_pending_choice(session: Session, rnd: Round, choice: str) -> None:
     rnd.prompt_text = None
     rnd.prompt_media_type = None
     rnd.prompt_file_id = None
+    rnd.prompt_source = None
+
+
+def used_prompts(session: Session, session_id: int) -> set[str]:
+    rows = (
+        session.query(Round.prompt_text)
+        .filter(Round.session_id == session_id, Round.prompt_text.isnot(None))
+        .all()
+    )
+    return {r[0].strip() for r in rows if r[0] and r[0].strip()}
 
 
 def submit_answer(
@@ -349,6 +372,44 @@ def finish_game(session: Session, game: GameSession) -> None:
     if game.game_type == "fake_identity":
         game.status = "guessing"
     return None
+
+
+def continue_game(session: Session, game: GameSession, *, extra_rounds: int = DEFAULT_TWO_PLAYER_ROUNDS) -> Optional[Round]:
+    """Resume a finished two-player game for extra rounds."""
+    if game.status not in ("finished",):
+        return None
+    if game.game_type in {"group", "channel"}:
+        return None
+    game.status = "playing"
+    game.finished_at = None
+    game.summary = None
+    current = int(game.max_rounds or 0)
+    game.max_rounds = max(current, game.round_number) + max(1, extra_rounds)
+    return advance_round(session, game)
+
+
+def remake_two_player(session: Session, game: GameSession) -> Optional[Round]:
+    """Create a fresh 10-round game with the same two real players/personas."""
+    players = get_players(session, game)
+    if len(players) != 2:
+        return None
+    starter_user = next((p.user for p in players if p.user_id == game.starter_user_id), None)
+    new_game = create_session(
+        session,
+        game.game_type,
+        starter=starter_user or players[0].user,
+        max_rounds=two_player_round_cap(game.game_type),
+    )
+    for p in players:
+        add_player(
+            session,
+            new_game,
+            p.user,
+            identity_mode=p.identity_mode,
+            fake_identity_id=p.fake_identity_id,
+            display_label=p.display_label,
+        )
+    return start_two_player(session, new_game)
 
 
 def _game_type_label(game_type: str) -> str:

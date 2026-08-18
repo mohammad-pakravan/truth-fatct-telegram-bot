@@ -1,4 +1,4 @@
-﻿from bot.models.entities import (
+from bot.models.entities import (
     AnalyticsEvent,
     BotAdmin,
     FakeIdentity,
@@ -18,6 +18,7 @@
     UserLike,
     UserReport,
     UserRestriction,
+    UserSubmittedQuestion,
     Vote,
 )
 
@@ -42,4 +43,5 @@ __all__ = [
     "UserBlock",
     "OnlineNotify",
     "QuestionBankItem",
+    "UserSubmittedQuestion",
 ]

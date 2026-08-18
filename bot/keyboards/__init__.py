@@ -1,4 +1,4 @@
-﻿from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from bot.texts import fa as T
 
@@ -21,8 +21,7 @@ def main_menu(telegram_id: int | None = None, *, is_admin: bool | None = None) -
         [KeyboardButton(T.BTN_ADVANCED)],
         [KeyboardButton(T.BTN_ANON), KeyboardButton(T.BTN_NEARBY)],
         [KeyboardButton(T.BTN_FAKE)],
-        [KeyboardButton(T.BTN_HUB_PROFILE)],
-        [KeyboardButton(T.BTN_HUB_FRIENDS)],
+        [KeyboardButton(T.BTN_HUB_PROFILE), KeyboardButton(T.BTN_HUB_FRIENDS)],
     ]
     if show_admin:
         rows.append([KeyboardButton(T.BTN_ADMIN)])
@@ -103,6 +102,21 @@ def post_game_actions_keyboard(game_id: int, target_user_id: int) -> InlineKeybo
     )
 
 
+def post_game_continue_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    T.BTN_GAME_CONTINUE, callback_data=f"gafter:continue:{game_id}"
+                ),
+                InlineKeyboardButton(
+                    T.BTN_GAME_RESTART, callback_data=f"gafter:restart:{game_id}"
+                ),
+            ]
+        ]
+    )
+
+
 def contacts_list_keyboard(rows: list[tuple[int, str]]) -> InlineKeyboardMarkup:
     """rows: (contact_user_id, label)."""
     buttons = []
@@ -152,8 +166,7 @@ def hub_profile_menu() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton(T.BTN_SHOW_PROFILE)],
             [KeyboardButton(T.BTN_GAME_SETTINGS), KeyboardButton(T.BTN_HISTORY)],
-            [KeyboardButton(T.BTN_HELP)],
-            [KeyboardButton(T.BTN_BACK)],
+            [KeyboardButton(T.BTN_HELP), KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
     )
@@ -415,10 +428,12 @@ def truth_dare(session_id: int, picker_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     T.BTN_TRUTH, callback_data=f"td:{session_id}:{picker_id}:truth"
-                ),
+                )
+            ],
+            [
                 InlineKeyboardButton(
                     T.BTN_DARE, callback_data=f"td:{session_id}:{picker_id}:dare"
-                ),
+                )
             ],
         ]
     )
@@ -451,6 +466,9 @@ def asker_bank_keyboard(session_id: int, choice: str) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+    rows.append(
+        [InlineKeyboardButton("✍️ سوال خودم", callback_data=f"1vq:{session_id}:custom")]
+    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -686,10 +704,8 @@ def channel_answer_mode() -> InlineKeyboardMarkup:
 def channel_owner_truth_dare() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton(T.BTN_TRUTH, callback_data="ch_ask:truth"),
-                InlineKeyboardButton(T.BTN_DARE, callback_data="ch_ask:dare"),
-            ]
+            [InlineKeyboardButton(T.BTN_TRUTH, callback_data="ch_ask:truth")],
+            [InlineKeyboardButton(T.BTN_DARE, callback_data="ch_ask:dare")],
         ]
     )
 
@@ -804,6 +820,9 @@ def admin_question_bank_keyboard(counts: dict[str, int] | None = None) -> Inline
                 )
             ]
         )
+    rows.append(
+        [InlineKeyboardButton("📝 سوالات کاربران", callback_data="admin:qbank:userq")]
+    )
     rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -817,6 +836,29 @@ def admin_question_bucket_keyboard(bucket: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton("🔙 بازگشت", callback_data="admin:qbank")],
         ]
     )
+
+
+def admin_user_questions_keyboard(rows_data) -> InlineKeyboardMarkup:
+    rows = []
+    for qid, label in rows_data:
+        rows.append([InlineKeyboardButton(label[:64], callback_data=f"admin:qbank:uq:{qid}")])
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:qbank")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_user_question_detail_keyboard(question_id: int, *, added: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    if not added:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "➕ افزودن به سوالات ربات",
+                    callback_data=f"admin:qbank:uqadd:{question_id}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin:qbank:userq")])
+    return InlineKeyboardMarkup(rows)
 
 
 def admin_user_search_results_keyboard(user_ids: list[int]) -> InlineKeyboardMarkup:

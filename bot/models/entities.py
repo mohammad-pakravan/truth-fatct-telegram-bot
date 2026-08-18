@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
@@ -141,6 +141,7 @@ class Round(Base):
     target_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     # truth | dare | pending
     choice: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    prompt_source: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     # group category key e.g. tf18 | lucky (for reshuffle / resume)
     category_key: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     prompt_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -424,4 +425,35 @@ class QuestionBankItem(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+
+class UserSubmittedQuestion(Base):
+    """Custom user-written prompts that admins can review/add to the bot bank."""
+
+    __tablename__ = "user_submitted_questions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("game_sessions.id"), nullable=True, index=True
+    )
+    round_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("rounds.id"), nullable=True, index=True
+    )
+    submitter_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    target_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), index=True)  # truth | dare
+    suggested_bucket: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    text: Mapped[str] = mapped_column(Text)
+    added_to_bank: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    added_bucket: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    added_bank_item_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("question_bank.id"), nullable=True
+    )
+    reviewed_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 

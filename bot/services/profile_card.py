@@ -11,52 +11,49 @@ from bot.keyboards import main_menu
 from bot.models import User
 from bot.services import social as social_svc
 from bot.services import storage
+from bot.services.textfmt import btn, fa_num, format_profile_card
 from bot.texts import fa as T
 
 
-def profile_edit_inline() -> InlineKeyboardMarkup:
-    """Single button — used after wizard completion."""
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("✏️ ویرایش مشخصات", callback_data="profile_card:edit")]]
+def _likes_btn(likes: int) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        f"❤️ ({fa_num(likes)})", callback_data="own:likes"
     )
 
 
-def profile_fields_inline() -> InlineKeyboardMarkup:
-    """Full edit pad under the profile card."""
+def profile_edit_inline(likes: int = 0) -> InlineKeyboardMarkup:
+    """After wizard completion: likes + edit."""
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton("👤 نام", callback_data="pedit:name"),
-                InlineKeyboardButton("📷 عکس", callback_data="pedit:photo"),
-            ],
-            [
-                InlineKeyboardButton("🗺 استان", callback_data="pedit:province"),
-                InlineKeyboardButton("🏙 شهر", callback_data="pedit:city"),
-            ],
-            [
-                InlineKeyboardButton("🎂 سن", callback_data="pedit:age"),
-                InlineKeyboardButton("🚻 جنسیت", callback_data="pedit:gender"),
-            ],
-            [
-                InlineKeyboardButton("🦇 لقب", callback_data="pedit:nickname"),
-                InlineKeyboardButton("⚙️ تنظیمات بازی", callback_data="pedit:settings"),
-            ],
+            [_likes_btn(likes)],
+            [InlineKeyboardButton(btn("✏️", "ویرایش مشخصات"), callback_data="profile_card:edit")],
         ]
     )
 
 
-def _caption_value(value: str | int | None) -> str:
-    """Wrap LTR fragments so mixed Persian/Latin captions stay aligned in Telegram."""
-    if value is None or value == "":
-        return "—"
-    text = str(value)
-    if any(c.isascii() and (c.isalnum() or c in "@._-") for c in text):
-        return f"\u2066{text}\u2069"
-    return text
-
-
-def _caption_line(label: str, value: str | int | None) -> str:
-    return f"\u200f{label}{_caption_value(value)}"
+def profile_fields_inline(likes: int = 0) -> InlineKeyboardMarkup:
+    """Full edit pad under the profile card."""
+    return InlineKeyboardMarkup(
+        [
+            [_likes_btn(likes)],
+            [
+                InlineKeyboardButton(btn("👤", "نام"), callback_data="pedit:name"),
+                InlineKeyboardButton(btn("📷", "عکس"), callback_data="pedit:photo"),
+            ],
+            [
+                InlineKeyboardButton(btn("🗺", "استان"), callback_data="pedit:province"),
+                InlineKeyboardButton(btn("🏙", "شهر"), callback_data="pedit:city"),
+            ],
+            [
+                InlineKeyboardButton(btn("🎂", "سن"), callback_data="pedit:age"),
+                InlineKeyboardButton(btn("🚻", "جنسیت"), callback_data="pedit:gender"),
+            ],
+            [
+                InlineKeyboardButton(btn("🦇", "لقب"), callback_data="pedit:nickname"),
+                InlineKeyboardButton(btn("⚙️", "تنظیمات"), callback_data="pedit:settings"),
+            ],
+        ]
+    )
 
 
 def format_card_caption(user: User, *, intro: Optional[str] = None) -> str:
@@ -72,39 +69,17 @@ def format_public_caption(
     own: bool = False,
     in_game: bool = False,
 ) -> str:
-    """Public profile caption matching the product card style."""
-    gender_map = {"male": "پسر", "female": "دختر"}
-    show_identity = True if not apply_privacy else bool(user.show_identity)
-    show_age = True if not apply_privacy else bool(user.show_age)
-
-    lines: list[str] = []
-    if intro:
-        lines.append(f"\u200f{intro.strip()}")
-        lines.append("")
-
-    name = user.display_name or "—"
-    lines.append(_caption_line("👤 | نام: ", name))
-    if show_identity:
-        lines.append(
-            _caption_line("👥 | جنسیت: ", gender_map.get(user.gender or "", "—"))
-        )
-        lines.append(_caption_line("🌇 | استان: ", user.province or "—"))
-        lines.append(_caption_line("🏙️ | شهر: ", user.city or "—"))
-    else:
-        lines.append("\u200f👥 | هویت: مخفی")
-    if show_age:
-        lines.append(_caption_line("👶 | سن: ", user.age if user.age is not None else "—"))
-    elif not show_identity:
-        pass
-
-    from bot.services.presence import presence_label
-
-    status = presence_label(last_active_at=user.last_active_at, in_game=in_game)
-    lines.append(f"\u200f{status}")
-    if own:
-        likes = int(getattr(user, "likes_count", 0) or 0)
-        lines.append(_caption_line("❤️ لایک: ", likes))
-    return "\n".join(lines)
+    """Public profile caption — compact RTL, HTML-safe for Telegram captions."""
+    return format_profile_card(
+        user,
+        apply_privacy=apply_privacy,
+        own=own,
+        in_game=in_game,
+        intro=intro,
+        html=True,
+        show_likes=False,
+        show_status=not own,
+    )
 
 
 def public_profile_keyboard(
@@ -117,30 +92,24 @@ def public_profile_keyboard(
     is_contact: bool = False,
 ) -> InlineKeyboardMarkup:
     uid = target.id
-    like_label = f"❤️ {likes} لایک"
-    block_label = "🔓 آنبلاک" if blocked else "🚫 بلاک/آنبلاک"
-    friend_label = "✅ مخاطب هست" if is_contact else "➕ درخواست دوستی"
+    like_label = f"❤️ ({fa_num(likes)})"
+    block_label = btn("🔓", "آنبلاک") if blocked else btn("🚫", "بلاک")
+    friend_label = btn("✅", "مخاطب") if is_contact else btn("➕", "دوستی")
     notify_label = (
-        "🔕 لغو اطلاع آنلاین" if watching else "🛎️ به محض آنلاین شدن اطلاع بده"
+        btn("🔕", "لغو اطلاع") if watching else btn("🛎️", "اطلاع آنلاین")
     )
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(like_label, callback_data=f"up:like:{uid}")],
             [
-                InlineKeyboardButton("📝 پیام دایرکت", callback_data=f"up:dm:{uid}"),
-                InlineKeyboardButton(
-                    "😌 درخواست چت و بازی", callback_data=f"up:play:{uid}"
-                ),
+                InlineKeyboardButton(btn("📝", "دایرکت"), callback_data=f"up:dm:{uid}"),
+                InlineKeyboardButton(btn("🎮", "دعوت بازی"), callback_data=f"up:play:{uid}"),
             ],
             [
                 InlineKeyboardButton(block_label, callback_data=f"up:block:{uid}"),
                 InlineKeyboardButton(friend_label, callback_data=f"up:friend:{uid}"),
             ],
-            [
-                InlineKeyboardButton(
-                    "⭕ گزارش این کاربر", callback_data=f"up:report:{uid}"
-                )
-            ],
+            [InlineKeyboardButton(btn("⭕", "گزارش"), callback_data=f"up:report:{uid}")],
             [InlineKeyboardButton(notify_label, callback_data=f"up:notify:{uid}")],
         ]
     )
@@ -204,6 +173,7 @@ async def _send_photo_card(
             await message.reply_photo(
                 photo=user.profile_photo_file_id,
                 caption=caption[:1024],
+                parse_mode="HTML",
                 reply_markup=markup,
             )
             return True
@@ -217,6 +187,7 @@ async def _send_photo_card(
                 result = await message.reply_photo(
                     photo=InputFile(BytesIO(data), filename="profile.jpg"),
                     caption=caption[:1024],
+                    parse_mode="HTML",
                     reply_markup=markup,
                 )
                 if result.photo:
@@ -236,13 +207,16 @@ async def _send_photo_card(
     if placeholder_id:
         try:
             await message.reply_photo(
-                photo=placeholder_id, caption=caption[:1024], reply_markup=markup
+                photo=placeholder_id,
+                caption=caption[:1024],
+                parse_mode="HTML",
+                reply_markup=markup,
             )
             return True
         except Exception:
             pass
 
-    await message.reply_text(caption, reply_markup=markup)
+    await message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
     return False
 
 
@@ -256,10 +230,13 @@ async def send_profile_card(
     edit_mode: bool = False,
 ) -> None:
     caption = format_card_caption(user, intro=intro)
-    if len(caption) > 1000:
-        caption = caption[:997] + "…"
+    if len(caption) > 1024:
+        caption = format_card_caption(user, intro=None)[:1024]
 
-    markup = profile_fields_inline() if edit_mode else profile_edit_inline()
+    likes = int(getattr(user, "likes_count", 0) or 0)
+    markup = (
+        profile_fields_inline(likes) if edit_mode else profile_edit_inline(likes)
+    )
     await _send_photo_card(message, user, caption, markup, force_photo=True)
 
     if with_main_menu and not edit_mode:

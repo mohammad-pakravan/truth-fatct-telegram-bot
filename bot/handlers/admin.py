@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 
@@ -194,6 +194,69 @@ async def _qbank_callbacks(query, tg, data: str) -> None:
         await query.edit_message_text(
             T.ADMIN_QBANK_MENU,
             reply_markup=kb.admin_question_bank_keyboard(counts),
+        )
+        return
+
+    if data == "admin:qbank:userq":
+        with get_session() as session:
+            items = qbank_svc.list_user_submitted(session, limit=25)
+        if not items:
+            await query.edit_message_text(
+                T.ADMIN_USER_Q_EMPTY,
+                reply_markup=kb.admin_user_questions_keyboard([]),
+            )
+            return
+        rows_ui = []
+        lines = []
+        for i, item in enumerate(items, 1):
+            kind = "حقیقت" if item.kind == "truth" else "جرئت"
+            label = f"{i}. {kind} — {(item.text or '')[:36]}"
+            rows_ui.append((item.id, label))
+            lines.append(label)
+        await query.edit_message_text(
+            T.ADMIN_USER_Q_LIST.format(n=len(items), list="\n".join(lines)),
+            reply_markup=kb.admin_user_questions_keyboard(rows_ui),
+        )
+        return
+
+    if data.startswith("admin:qbank:uq:"):
+        qid = int(data.split(":")[3])
+        with get_session() as session:
+            item = qbank_svc.get_user_submitted(session, qid)
+            if not item:
+                await query.edit_message_text(
+                    T.ADMIN_USER_Q_EMPTY,
+                    reply_markup=kb.admin_user_questions_keyboard([]),
+                )
+                return
+            body = T.ADMIN_USER_Q_DETAIL.format(
+                id=item.id,
+                kind="حقیقت" if item.kind == "truth" else "جرئت",
+                bucket=qbank_svc.BUCKET_LABELS.get(item.suggested_bucket or "", item.suggested_bucket or "نامشخص"),
+                submitter=f"#{item.submitter_user_id}" if item.submitter_user_id else "نامشخص",
+                text=item.text,
+            )
+        await query.edit_message_text(
+            body,
+            reply_markup=kb.admin_user_question_detail_keyboard(
+                qid, added=bool(item.added_to_bank)
+            ),
+        )
+        return
+
+    if data.startswith("admin:qbank:uqadd:"):
+        qid = int(data.split(":")[3])
+        with get_session() as session:
+            row, _item = qbank_svc.add_submitted_to_bank(
+                session, submitted_id=qid, admin_tg=tg.id
+            )
+            if not row:
+                await query.answer("قبلاً اضافه شده یا پیدا نشد.", show_alert=True)
+                return
+            label = qbank_svc.BUCKET_LABELS.get(row.added_bucket or "", row.added_bucket or "نامشخص")
+        await query.edit_message_text(
+            T.ADMIN_USER_Q_ADDED.format(label=label),
+            reply_markup=kb.admin_user_question_detail_keyboard(qid, added=True),
         )
         return
 

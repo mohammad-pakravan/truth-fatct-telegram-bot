@@ -21,9 +21,9 @@ def get_or_create_user(
         was_offline = not is_online(user.last_active_at)
         if username is not None:
             user.username = username
-        # Keep Telegram account name for users who never finished onboarding
-        if full_name and not profile_complete(user):
-            user.display_name = full_name[:64]
+        # Fill a blank name from Telegram — never overwrite one the user typed.
+        if full_name and not (user.display_name or "").strip():
+            user.display_name = full_name[:128]
         user.last_active_at = datetime.utcnow()
         # Stash for callers that can send Telegram notifies
         user._became_online = was_offline  # type: ignore[attr-defined]
@@ -32,7 +32,7 @@ def get_or_create_user(
     user = User(
         telegram_id=telegram_id,
         username=username,
-        display_name=(full_name or username or f"user_{telegram_id}")[:64],
+        display_name=(full_name or username or f"user_{telegram_id}")[:128],
         last_active_at=datetime.utcnow(),
     )
     user._became_online = False  # type: ignore[attr-defined]
@@ -56,38 +56,23 @@ def format_profile(user: User, viewer_settings: Optional[User] = None) -> str:
     Format a user's profile for another player.
     When viewer_settings is not None, apply subject's privacy flags.
     """
+    from bot.services.textfmt import format_profile_card
+
     apply_privacy = viewer_settings is not None
-    lines = [f"نام: {user.display_name or '—'}"]
-
-    if user.nickname:
-        lines.append(f"لقب: {user.nickname}")
-
-    show_identity = True if not apply_privacy else user.show_identity
-    show_age = True if not apply_privacy else user.show_age
+    text = format_profile_card(
+        user,
+        apply_privacy=apply_privacy,
+        own=not apply_privacy,
+        show_likes=True,
+        show_status=True,
+        html=False,
+    )
     show_id = False if not apply_privacy else user.show_private_id
-
-    if show_identity:
-        gender_map = {"male": "پسر", "female": "دختر"}
-        lines.append(f"جنسیت: {gender_map.get(user.gender or '', '—')}")
-        lines.append(f"استان: {user.province or '—'}")
-        lines.append(f"شهر: {user.city or '—'}")
-    else:
-        lines.append("هویت: مخفی")
-
-    if show_age and user.age:
-        lines.append(f"سن: {user.age}")
-
     if show_id and user.username:
-        lines.append(f"آیدی: @{user.username}")
+        from bot.services.textfmt import rtl
 
-    likes = int(getattr(user, "likes_count", 0) or 0)
-    lines.append(f"❤️ لایک: {likes}")
-
-    from bot.services.presence import format_last_seen
-
-    lines.append(format_last_seen(getattr(user, "last_active_at", None)))
-
-    return "\n".join(lines)
+        text += "\n" + rtl(f"@{user.username}")
+    return text
 
 
 def may_show_photo(user: User, *, for_opponent: bool = True) -> bool:

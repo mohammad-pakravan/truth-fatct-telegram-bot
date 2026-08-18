@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 
@@ -112,12 +112,13 @@ async def _show_opponent_profile(bot, chat_id: int, session, user, game) -> None
         return
     if game.game_type == "fake_identity":
         await bot.send_message(
-            chat_id, "پروفایل حریف:\n" + game_engine.presented_profile(other_player)
+            chat_id,
+            T.OPPONENT_HEADER + "\n" + T.RULE + "\n" + game_engine.presented_profile(other_player),
         )
         return
     other = other_player.user
     profile = user_svc.format_profile(other, viewer_settings=user)
-    caption = f"پروفایل حریف:\n{profile}"
+    caption = T.OPPONENT_HEADER + "\n" + T.RULE + "\n" + profile
     if user_svc.may_show_photo(other, for_opponent=True):
         try:
             if other.profile_photo_file_id:
@@ -478,7 +479,7 @@ async def _ask_chooser_for_prompt(
     choice: str,
     glass_message=None,
 ) -> None:
-    """Asker UI: pick bank category only (no free-text / media questions)."""
+    """Asker UI: pick bank category or type a custom text question."""
     text = T.OPPONENT_PICKED_ASK.format(kind=kind)
     action_id = None
     markup = kb.asker_bank_keyboard(game_id, choice)
@@ -627,7 +628,7 @@ async def resume_active_game_keyboard(
 
 
 async def custom_prompt_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Block free-text while asker should use bank buttons only."""
+    """Let asker send a custom text question while choosing a bank category."""
     if not update.message or not update.effective_user or not update.message.text:
         return False
     tg = update.effective_user
@@ -646,8 +647,13 @@ async def custom_prompt_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     }:
         return False
 
-    await update.message.reply_text(T.ASK_USE_BUTTONS)
-    return True
+    return await _submit_custom_prompt(
+        update,
+        context,
+        prompt_text=text,
+        media_type=None,
+        file_id=None,
+    )
 
 
 async def _submit_custom_prompt(
@@ -658,11 +664,86 @@ async def _submit_custom_prompt(
     media_type: str | None,
     file_id: str | None,
 ) -> bool:
-    """Legacy no-op: custom questions disabled (bank only)."""
+    """Submit custom text/media prompt from asker to target."""
     tg = update.effective_user
-    st.set_state(tg.id, wait=None, custom_prompt_game_id=None, custom_prompt_choice=None)
+    state = st.get(tg.id)
+    if state.get("wait") != "asker_pick":
+        return False
+    game_id = state.get("custom_prompt_game_id")
+    if not game_id:
+        return False
+
+    with get_session() as session:
+        user = user_svc.get_or_create_user(session, tg.id, tg.username)
+        game = game_engine.get_session(session, int(game_id))
+        if not game or game.status != "playing":
+            if update.message:
+                await update.message.reply_text("بازی فعال نیست.")
+            st.set_state(tg.id, wait=None, custom_prompt_game_id=None, custom_prompt_choice=None)
+            return True
+        rnd = game_engine.get_active_round(session, game)
+        if (
+            not rnd
+            or rnd.chooser_user_id != user.id
+            or not rnd.choice
+            or game_engine.round_has_prompt(rnd)
+        ):
+            if update.message:
+                await update.message.reply_text(T.NOT_YOUR_TURN)
+            st.set_state(tg.id, wait=None, custom_prompt_game_id=None, custom_prompt_choice=None)
+            return True
+        prompt = game_engine.apply_choice(
+            session,
+            rnd,
+            rnd.choice,
+            prompt_text,
+            media_type=media_type,
+            file_id=file_id,
+        )
+        target = session.get(User, rnd.target_user_id)
+        from bot.services.questions import log_user_submitted_question, resolve_bucket
+
+        log_user_submitted_question(
+            session,
+            session_id=game.id,
+            round_id=rnd.id,
+            submitter_user_id=user.id,
+            target_user_id=target.id if target else None,
+            kind=rnd.choice,
+            suggested_bucket=resolve_bucket(
+                getattr(target, "gender", None), getattr(target, "age", None)
+            )
+            if target
+            else None,
+            text=prompt,
+        )
+        target_tg = target.telegram_id if target else None
+        round_number = game.round_number
+        max_rounds = game.max_rounds
+        kind = T.BTN_TRUTH if rnd.choice == "truth" else T.BTN_DARE
+
+    st.set_state(
+        tg.id,
+        wait=None,
+        custom_prompt_game_id=None,
+        custom_prompt_choice=None,
+        game_glass_message_id=None,
+        pending_bank_prompt=prompt,
+    )
     if update.message:
-        await update.message.reply_text(T.ASK_USE_BUTTONS)
+        await update.message.reply_text(T.CUSTOM_PROMPT_SENT.format(prompt=prompt))
+    if target_tg:
+        await _deliver_prompt_to_target(
+            context,
+            target_tg=target_tg,
+            kind=kind,
+            prompt=prompt,
+            round_number=round_number,
+            max_rounds=max_rounds,
+            game_id=game_id,
+            media_type=media_type,
+            file_id=file_id,
+        )
     return True
 
 
@@ -839,6 +920,63 @@ async def on_end_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _end_active_game(context, session, user, game)
 
 
+async def on_game_after(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Continue finished game for 10 rounds or start a fresh new game."""
+    query = update.callback_query
+    if not query or not query.data or not update.effective_user:
+        return
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        await query.answer()
+        return
+    _, action, sid = parts
+    game_id = int(sid)
+
+    with get_session() as session:
+        user = user_svc.get_or_create_user(
+            session, update.effective_user.id, update.effective_user.username
+        )
+        game = game_engine.get_session(session, game_id)
+        if not game or game.status != "finished":
+            await query.answer("این بازی قابل ادامه نیست.", show_alert=True)
+            return
+        players = game_engine.get_players(session, game)
+        if user.id not in {p.user_id for p in players}:
+            await query.answer(T.NOT_YOUR_TURN, show_alert=True)
+            return
+        if action == "continue":
+            nxt = game_engine.continue_game(session, game)
+            if not nxt:
+                await query.answer("ادامه این بازی ممکن نیست.", show_alert=True)
+                return
+            new_game = game
+            text = T.GAME_CONTINUED
+        elif action == "restart":
+            nxt = game_engine.remake_two_player(session, game)
+            if not nxt:
+                await query.answer("شروع دوباره این بازی ممکن نیست.", show_alert=True)
+                return
+            new_game = session.get(type(game), nxt.session_id)
+            text = T.GAME_RESTARTED
+        else:
+            await query.answer()
+            return
+        new_players = game_engine.get_players(session, new_game)
+        await query.answer(text, show_alert=True)
+        try:
+            await query.edit_message_text(text)
+        except Exception:
+            pass
+        await _broadcast_next_round(
+            context,
+            session,
+            new_game,
+            new_players,
+            nxt,
+            anonymous=(new_game.game_type == "anonymous"),
+        )
+
+
 async def on_truth_dare(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if not query or not query.data:
@@ -902,6 +1040,20 @@ async def on_asker_bank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     from bot.services.questions import CATEGORIES, random_prompt
 
+    if cat == "custom":
+        await query.answer()
+        st.set_state(
+            update.effective_user.id,
+            wait="asker_pick",
+            custom_prompt_game_id=session_id,
+            custom_prompt_choice=None,
+        )
+        try:
+            await query.edit_message_text("سوال خودت را تایپ کن ✍️")
+        except Exception:
+            pass
+        return
+
     if cat not in CATEGORIES:
         await query.answer("دسته نامعتبر.", show_alert=True)
         return
@@ -926,21 +1078,27 @@ async def on_asker_bank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         kind = rnd.choice
         _k, mode, _label = CATEGORIES[cat]
+        seen = game_engine.used_prompts(session, game.id)
         if mode == "lucky":
             from bot.services.questions import BUCKETS
             import random as _rnd
 
             bucket = _rnd.choice(list(BUCKETS))
-            prompt = random_prompt(kind, session=session, bucket=bucket)  # type: ignore[arg-type]
+            prompt = random_prompt(
+                kind, session=session, bucket=bucket, exclude=seen
+            )  # type: ignore[arg-type]
         elif mode == "normal":
-            prompt = random_prompt(kind, session=session)  # type: ignore[arg-type]
+            prompt = random_prompt(kind, session=session, exclude=seen)  # type: ignore[arg-type]
         else:
-            prompt = random_prompt(kind, session=session, bucket=mode)  # type: ignore[arg-type]
+            prompt = random_prompt(
+                kind, session=session, bucket=mode, exclude=seen
+            )  # type: ignore[arg-type]
 
         rnd.prompt_text = prompt
         rnd.category_key = cat
         rnd.prompt_media_type = None
         rnd.prompt_file_id = None
+        rnd.prompt_source = "bank"
         target = session.get(User, rnd.target_user_id)
         target_tg = target.telegram_id if target else None
         round_number = game.round_number
@@ -1230,8 +1388,12 @@ async def _notify_and_advance(
             try:
                 await context.bot.send_message(
                     p.user.telegram_id,
-                    T.GAME_OVER.format(summary=summary),
-                    reply_markup=kb.main_menu(p.user.telegram_id),
+                    T.GAME_OVER_NEXT.format(summary=summary)
+                    if game.status == "finished"
+                    else T.GAME_OVER.format(summary=summary),
+                    reply_markup=kb.post_game_continue_keyboard(game_id)
+                    if game.status == "finished"
+                    else kb.main_menu(p.user.telegram_id),
                 )
             except Exception:
                 pass
@@ -1253,7 +1415,10 @@ async def _notify_and_advance(
         if game.chat_id:
             try:
                 await context.bot.send_message(
-                    game.chat_id, T.GAME_OVER.format(summary=summary)
+                    game.chat_id,
+                    T.GAME_OVER_NEXT.format(summary=summary)
+                    if game.status == "finished"
+                    else T.GAME_OVER.format(summary=summary),
                 )
             except Exception:
                 pass
@@ -1261,6 +1426,10 @@ async def _notify_and_advance(
 
     if not nxt:
         return
+    await _broadcast_next_round(context, session, game, players, nxt, anonymous=anonymous)
+
+
+async def _broadcast_next_round(context, session, game, players, nxt, *, anonymous: bool) -> None:
     chooser = session.get(User, nxt.chooser_user_id)
     target = session.get(User, nxt.target_user_id)
     if anonymous:

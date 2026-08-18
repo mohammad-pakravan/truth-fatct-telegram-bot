@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 FEATURE_LABELS = {
     T.BTN_HUB_PLAY: "شروع بازی",
     T.BTN_PLAY_NORMAL: "بازی عادی",
-    T.BTN_ADVANCED: "چت و بازی پیشرفته",
+    T.BTN_ADVANCED: "جستجو و بازی",
     T.BTN_NEARBY: "افراد نزدیک",
     T.BTN_ANON: "بازی با ناشناس",
-    T.BTN_HUB_PROFILE: "پروفایل و لیست‌ها",
+    T.BTN_HUB_PROFILE: "پروفایل",
     T.BTN_HUB_FRIENDS: "بازی با دوستان",
     T.BTN_FRIENDS: "لینک شخصی",
     T.BTN_PLAY_FRIEND_LINK: "لینک دوست",

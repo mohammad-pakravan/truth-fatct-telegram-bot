@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import random
@@ -9,7 +9,7 @@ from typing import Literal, Optional
 from sqlalchemy.orm import Session
 
 from bot.config import QUESTIONS_PATH
-from bot.models import QuestionBankItem
+from bot.models import QuestionBankItem, UserSubmittedQuestion
 
 Kind = Literal["truth", "dare"]
 
@@ -59,6 +59,15 @@ _DEFAULT = {
         "یه چالش دو دقیقه‌ای برای طرف مقابل پیشنهاد بده.",
     ],
 }
+
+
+def _pick_from_pool(pool: list[str], exclude: set[str] | None = None) -> str:
+    exclude = {x.strip() for x in (exclude or set()) if x and x.strip()}
+    usable = [p for p in pool if p and p.strip() and p.strip() not in exclude]
+    if usable:
+        return random.choice(usable)
+    usable = [p for p in pool if p and p.strip()]
+    return random.choice(usable)
 
 
 def resolve_bucket(gender: Optional[str], age: Optional[int]) -> str:
@@ -159,6 +168,85 @@ def list_bucket(session: Session, bucket: str, *, limit: int = 30) -> list[str]:
     return [r[0] for r in rows]
 
 
+def log_user_submitted_question(
+    session: Session,
+    *,
+    session_id: int | None,
+    round_id: int | None,
+    submitter_user_id: int | None,
+    target_user_id: int | None,
+    kind: str,
+    suggested_bucket: str | None,
+    text: str,
+) -> UserSubmittedQuestion:
+    row = UserSubmittedQuestion(
+        session_id=session_id,
+        round_id=round_id,
+        submitter_user_id=submitter_user_id,
+        target_user_id=target_user_id,
+        kind=kind,
+        suggested_bucket=suggested_bucket,
+        text=text[:500],
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def list_user_submitted(session: Session, *, limit: int = 20) -> list[UserSubmittedQuestion]:
+    return (
+        session.query(UserSubmittedQuestion)
+        .filter(UserSubmittedQuestion.added_to_bank.is_(False))
+        .order_by(UserSubmittedQuestion.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def count_user_submitted_pending(session: Session) -> int:
+    return (
+        session.query(UserSubmittedQuestion)
+        .filter(UserSubmittedQuestion.added_to_bank.is_(False))
+        .count()
+    )
+
+
+def get_user_submitted(session: Session, question_id: int) -> UserSubmittedQuestion | None:
+    return session.get(UserSubmittedQuestion, question_id)
+
+
+def add_submitted_to_bank(
+    session: Session,
+    *,
+    submitted_id: int,
+    admin_tg: int | None,
+) -> tuple[UserSubmittedQuestion | None, QuestionBankItem | None]:
+    row = session.get(UserSubmittedQuestion, submitted_id)
+    if not row or row.added_to_bank:
+        return None, None
+    bucket = row.suggested_bucket or "male"
+    if bucket not in BUCKETS:
+        bucket = "male"
+    item = QuestionBankItem(
+        bucket=bucket,
+        kind=row.kind if row.kind in ("truth", "dare") else "any",
+        text=row.text,
+        active=True,
+        created_by=admin_tg,
+    )
+    session.add(item)
+    session.flush()
+    row.added_to_bank = True
+    row.added_bucket = bucket
+    row.added_bank_item_id = item.id
+    row.reviewed_by = admin_tg
+    from datetime import datetime
+
+    row.reviewed_at = datetime.utcnow()
+    session.flush()
+    return row, item
+
+
 def _file_bank() -> dict:
     path = Path(QUESTIONS_PATH)
     if path.exists():
@@ -178,8 +266,11 @@ def random_prompt(
     age: Optional[int] = None,
     session: Session | None = None,
     bucket: str | None = None,
+    exclude: set[str] | None = None,
 ) -> str:
     """Pick a prompt: prefer gender DB bank, else legacy JSON / defaults."""
+    exclude = {x.strip() for x in (exclude or set()) if x and x.strip()}
+
     if bucket and bucket in BUCKETS:
         resolved = bucket
     else:
@@ -196,7 +287,7 @@ def random_prompt(
         )
         pool = [r[0] for r in rows if r[0]]
         if pool:
-            return random.choice(pool)
+            return _pick_from_pool(pool, exclude)
         # Soft fallback: same gender other age band
         alt = {
             "female": "female_18",
@@ -216,13 +307,15 @@ def random_prompt(
             )
             pool = [r[0] for r in rows if r[0]]
             if pool:
-                return random.choice(pool)
+                return _pick_from_pool(pool, exclude)
 
     bank = _file_bank()
-    return random.choice(bank.get(kind) or _DEFAULT[kind])
+    return _pick_from_pool(bank.get(kind) or _DEFAULT[kind], exclude)
 
 
-def prompt_for_category(session: Session, cat_key: str) -> tuple[str, str, str]:
+def prompt_for_category(
+    session: Session, cat_key: str, *, exclude: set[str] | None = None
+) -> tuple[str, str, str]:
     """Return (kind, category_label, prompt_text) for a group category key."""
     meta = CATEGORIES.get(cat_key)
     if not meta:
@@ -232,7 +325,9 @@ def prompt_for_category(session: Session, cat_key: str) -> tuple[str, str, str]:
     if mode == "lucky":
         kind = random.choice(["truth", "dare"])
         bucket = random.choice(list(BUCKETS))
-        text = random_prompt(kind, session=session, bucket=bucket)  # type: ignore[arg-type]
+        text = random_prompt(
+            kind, session=session, bucket=bucket, exclude=exclude
+        )  # type: ignore[arg-type]
         return kind, label, text
     if mode == "normal":
         pools: list[str] = []
@@ -248,8 +343,10 @@ def prompt_for_category(session: Session, cat_key: str) -> tuple[str, str, str]:
             )
             pools.extend(r[0] for r in rows if r[0])
         if pools:
-            return kind, label, random.choice(pools)
-        text = random_prompt(kind, session=session)  # type: ignore[arg-type]
+            return kind, label, _pick_from_pool(pools, exclude)
+        text = random_prompt(kind, session=session, exclude=exclude)  # type: ignore[arg-type]
         return kind, label, text
-    text = random_prompt(kind, session=session, bucket=mode)  # type: ignore[arg-type]
+    text = random_prompt(
+        kind, session=session, bucket=mode, exclude=exclude
+    )  # type: ignore[arg-type]
     return kind, label, text

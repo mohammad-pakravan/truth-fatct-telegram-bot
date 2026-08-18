@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
@@ -91,7 +91,12 @@ def accept_invite(session: Session, joiner: User, token: str) -> AcceptedInvite:
 
     label = inviter_label(inv)
     mode = owner_identity_mode(inv)
-    game = game_engine.create_session(session, "friends", starter=owner)
+    game = game_engine.create_session(
+        session,
+        "friends",
+        starter=owner,
+        max_rounds=game_engine.two_player_round_cap("friends"),
+    )
     game_engine.add_player(
         session,
         game,

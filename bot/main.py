@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 
@@ -296,7 +296,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(
         CallbackQueryHandler(
             profile.profile_callbacks,
-            pattern=r"^(pgender:|pprov:|set:|profile_card:|pedit:)",
+            pattern=r"^(pgender:|pprov:|set:|profile_card:|pedit:|own:likes)",
         )
     )
     app.add_handler(CallbackQueryHandler(wizard.wizard_callbacks, pattern=r"^(wiz_prov:|wiz_gender:)"))
@@ -315,6 +315,7 @@ def build_app(token: str | None = None) -> Application:
     app.add_handler(CallbackQueryHandler(gameplay.on_asker_bank, pattern=r"^1vq:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_game_action, pattern=r"^gact:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_end_confirm, pattern=r"^end(ok|no):"))
+    app.add_handler(CallbackQueryHandler(gameplay.on_game_after, pattern=r"^gafter:"))
     app.add_handler(CallbackQueryHandler(gameplay.on_skip, pattern=r"^skip:"))
     app.add_handler(CallbackQueryHandler(stranger.nearby_callbacks, pattern=r"^near_r:"))
     app.add_handler(

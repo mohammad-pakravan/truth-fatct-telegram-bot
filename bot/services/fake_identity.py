@@ -17,6 +17,7 @@ from bot.config import (
     IDENTITIES_PATH,
 )
 from bot.models import FakeIdentity, UserFakeAssignment
+from bot.services.textfmt import fa_num
 from bot.texts import fa as T
 
 logger = logging.getLogger(__name__)
@@ -304,7 +305,7 @@ def format_card(fi: FakeIdentity) -> str:
     return T.FAKE_CARD.format(
         name=fi.name,
         gender=_gender_fa(fi.gender),
-        age=fi.age,
+        age=fa_num(fi.age),
         city=fi.city,
         job=fi.job,
         bio=fi.bio,
@@ -317,7 +318,7 @@ def format_card_public(fi: FakeIdentity) -> str:
     return T.FAKE_CARD_PUBLIC.format(
         name=fi.name,
         gender=_gender_fa(fi.gender),
-        age=fi.age,
+        age=fa_num(fi.age),
         city=fi.city,
         job=fi.job,
         bio=fi.bio,

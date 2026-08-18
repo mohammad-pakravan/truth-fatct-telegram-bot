@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 
@@ -339,7 +339,12 @@ async def on_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         invite_svc.set_status(session, inv, "accepted")
         _cancel_expire_job(context, invite_id)
 
-        game = game_engine.create_session(session, "stranger", starter=fu)
+        game = game_engine.create_session(
+            session,
+            "stranger",
+            starter=fu,
+            max_rounds=game_engine.two_player_round_cap("stranger"),
+        )
         game_engine.add_player(session, game, fu)
         game_engine.add_player(session, game, tu)
         rnd = game_engine.start_two_player(session, game)

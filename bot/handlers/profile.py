@@ -127,10 +127,20 @@ async def profile_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     if not query or not query.data or not update.effective_user:
         return
-    await query.answer()
     data = query.data
     tg = update.effective_user
     msg = query.message
+
+    if data == "own:likes":
+        with get_session() as session:
+            user = user_svc.get_or_create_user(session, tg.id, tg.username, tg.full_name)
+            n = int(getattr(user, "likes_count", 0) or 0)
+        from bot.services.textfmt import fa_num
+
+        await query.answer(f"❤️ ({fa_num(n)})")
+        return
+
+    await query.answer()
 
     if data == "profile_card:edit":
         st.set_state(tg.id, mode="profile")

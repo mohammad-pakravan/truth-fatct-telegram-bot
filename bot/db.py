@@ -1,4 +1,4 @@
-﻿from contextlib import contextmanager
+from contextlib import contextmanager
 from typing import Generator
 
 from sqlalchemy import create_engine, text
@@ -30,6 +30,34 @@ def init_db() -> None:
     _migrate_round_media_columns()
     _migrate_user_likes_count()
     _migrate_account_privacy_columns()
+    _migrate_round_prompt_source()
+
+
+def _migrate_round_prompt_source() -> None:
+    """Add prompt_source on rounds."""
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(rounds)").fetchall()
+            cols = {r[1] for r in rows}
+            if "prompt_source" not in cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE rounds ADD COLUMN prompt_source VARCHAR(16)"
+                )
+        return
+    if "postgresql" not in DATABASE_URL:
+        return
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'rounds' AND column_name = 'prompt_source'"
+                )
+            ).fetchone()
+            if not exists:
+                conn.execute(text("ALTER TABLE rounds ADD COLUMN prompt_source VARCHAR(16)"))
+    except Exception:
+        pass
 
 
 def _migrate_account_privacy_columns() -> None:

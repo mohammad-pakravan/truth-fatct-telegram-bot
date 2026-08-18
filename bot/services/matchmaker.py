@@ -416,7 +416,12 @@ def _pair_claimed(
     else:
         game_type = "stranger"
 
-    game = game_engine.create_session(session, game_type, starter=user)
+    game = game_engine.create_session(
+        session,
+        game_type,
+        starter=user,
+        max_rounds=game_engine.two_player_round_cap(game_type),
+    )
     game_engine.add_player(
         session,
         game,

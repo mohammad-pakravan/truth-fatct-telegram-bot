@@ -1,0 +1,101 @@
+2026-08-18 10:36:34,971 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:36:37 UTC)" (scheduled at 2026-08-18 10:36:34.965500+00:00)
+2026-08-18 10:36:35,003 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:36:37 UTC)" executed successfully
+2026-08-18 10:37:00,494 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:01 UTC)" (scheduled at 2026-08-18 10:36:58.965500+00:00)
+2026-08-18 10:37:00,525 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:01 UTC)" executed successfully
+2026-08-18 10:37:01,076 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:36:49,261 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:36:59,719 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:37:02,199 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:04 UTC)" (scheduled at 2026-08-18 10:37:01.965500+00:00)
+2026-08-18 10:37:02,241 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:04 UTC)" executed successfully
+2026-08-18 10:37:04,972 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:07 UTC)" (scheduled at 2026-08-18 10:37:04.965500+00:00)
+2026-08-18 10:37:05,011 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:07 UTC)" executed successfully
+2026-08-18 10:37:07,969 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:10 UTC)" (scheduled at 2026-08-18 10:37:07.965500+00:00)
+2026-08-18 10:37:08,005 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:10 UTC)" executed successfully
+2026-08-18 10:37:10,038 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:37:10,967 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:13 UTC)" (scheduled at 2026-08-18 10:37:10.965500+00:00)
+2026-08-18 10:37:10,997 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:13 UTC)" executed successfully
+2026-08-18 10:37:36,208 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:37 UTC)" (scheduled at 2026-08-18 10:37:34.965500+00:00)
+2026-08-18 10:37:14,006 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:37 UTC)" executed successfully
+2026-08-18 10:37:20,330 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:37:30,683 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:37:37,966 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:40 UTC)" (scheduled at 2026-08-18 10:37:37.965500+00:00)
+2026-08-18 10:37:38,000 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:40 UTC)" executed successfully
+2026-08-18 10:37:40,967 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:43 UTC)" (scheduled at 2026-08-18 10:37:40.965500+00:00)
+2026-08-18 10:37:41,004 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:37:41,045 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:37:43 UTC)" executed successfully
+2026-08-18 10:38:06,227 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:07 UTC)" (scheduled at 2026-08-18 10:38:04.965500+00:00)
+2026-08-18 10:38:06,262 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:07 UTC)" executed successfully
+2026-08-18 10:37:51,453 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:38:01,755 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:38:07,983 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:10 UTC)" (scheduled at 2026-08-18 10:38:07.965500+00:00)
+2026-08-18 10:38:08,009 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:10 UTC)" executed successfully
+2026-08-18 10:38:11,000 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:13 UTC)" (scheduled at 2026-08-18 10:38:10.965500+00:00)
+2026-08-18 10:38:11,022 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:13 UTC)" executed successfully
+2026-08-18 10:38:12,133 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:38:36,179 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:37 UTC)" (scheduled at 2026-08-18 10:38:34.965500+00:00)
+2026-08-18 10:38:36,211 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:38:37 UTC)" executed successfully
+2026-08-18 10:38:22,537 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:38:45,952 INFO __main__ Bot starting… file log: /app/data/logs/bot.log (last 100 lines)
+2026-08-18 10:38:46,919 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getMe "HTTP/1.1 200 OK"
+2026-08-18 10:38:47,563 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/sendPhoto "HTTP/1.1 200 OK"
+2026-08-18 10:38:47,872 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/deleteMessage "HTTP/1.1 200 OK"
+2026-08-18 10:38:47,894 INFO bot.services.placeholders Cached placeholder file_id for male
+2026-08-18 10:38:48,247 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/sendPhoto "HTTP/1.1 200 OK"
+2026-08-18 10:38:48,567 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/deleteMessage "HTTP/1.1 200 OK"
+2026-08-18 10:38:48,600 INFO bot.services.placeholders Cached placeholder file_id for female
+2026-08-18 10:39:11,250 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/sendPhoto "HTTP/1.1 200 OK"
+2026-08-18 10:38:49,364 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/deleteMessage "HTTP/1.1 200 OK"
+2026-08-18 10:38:49,386 INFO bot.services.placeholders Cached placeholder file_id for unknown
+2026-08-18 10:38:51,404 INFO httpx HTTP Request: POST https://litterbox.catbox.moe/resources/internals/api.php "HTTP/1.1 200 OK"
+2026-08-18 10:38:51,427 INFO bot.services.placeholders Cached public thumb URL for male: https://litter.catbox.moe/s7ds67.jpg
+2026-08-18 10:38:52,678 INFO httpx HTTP Request: POST https://litterbox.catbox.moe/resources/internals/api.php "HTTP/1.1 200 OK"
+2026-08-18 10:38:52,711 INFO bot.services.placeholders Cached public thumb URL for female: https://litter.catbox.moe/sl64mg.jpg
+2026-08-18 10:38:55,158 INFO httpx HTTP Request: POST https://litterbox.catbox.moe/resources/internals/api.php "HTTP/1.1 200 OK"
+2026-08-18 10:38:55,184 INFO bot.services.placeholders Cached public thumb URL for unknown: https://litter.catbox.moe/1ryxlk.jpg
+2026-08-18 10:38:55,231 INFO apscheduler.scheduler Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-08-18 10:38:55,278 INFO __main__ Match queue worker started (every 3.0s)
+2026-08-18 10:38:57,225 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/deleteWebhook "HTTP/1.1 200 OK"
+2026-08-18 10:38:57,250 INFO apscheduler.scheduler Added job "match_queue" to job store "default"
+2026-08-18 10:38:57,291 INFO apscheduler.scheduler Scheduler started
+2026-08-18 10:38:57,332 INFO telegram.ext.Application Application started
+2026-08-18 10:38:58,306 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:00,239 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:03 UTC)" (scheduled at 2026-08-18 10:39:00.230843+00:00)
+2026-08-18 10:39:00,282 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:03 UTC)" executed successfully
+2026-08-18 10:39:00,440 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:03,234 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:06 UTC)" (scheduled at 2026-08-18 10:39:03.230843+00:00)
+2026-08-18 10:39:03,270 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:06 UTC)" executed successfully
+2026-08-18 10:39:06,239 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:09 UTC)" (scheduled at 2026-08-18 10:39:06.230843+00:00)
+2026-08-18 10:39:06,271 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:09 UTC)" executed successfully
+2026-08-18 10:39:09,233 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:12 UTC)" (scheduled at 2026-08-18 10:39:09.230843+00:00)
+2026-08-18 10:39:09,264 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:12 UTC)" executed successfully
+2026-08-18 10:39:10,037 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:12,234 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:15 UTC)" (scheduled at 2026-08-18 10:39:12.230843+00:00)
+2026-08-18 10:39:12,263 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:15 UTC)" executed successfully
+2026-08-18 10:39:15,231 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:18 UTC)" (scheduled at 2026-08-18 10:39:15.230843+00:00)
+2026-08-18 10:39:15,261 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:18 UTC)" executed successfully
+2026-08-18 10:39:15,701 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:17,202 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/sendMessage "HTTP/1.1 200 OK"
+2026-08-18 10:39:18,233 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:21 UTC)" (scheduled at 2026-08-18 10:39:18.230843+00:00)
+2026-08-18 10:39:18,264 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:21 UTC)" executed successfully
+2026-08-18 10:39:20,338 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:20,751 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/sendMessage "HTTP/1.1 200 OK"
+2026-08-18 10:39:21,262 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:24 UTC)" (scheduled at 2026-08-18 10:39:21.230843+00:00)
+2026-08-18 10:39:21,293 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:24 UTC)" executed successfully
+2026-08-18 10:39:22,360 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:22,708 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/sendPhoto "HTTP/1.1 200 OK"
+2026-08-18 10:39:23,030 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/sendMessage "HTTP/1.1 200 OK"
+2026-08-18 10:39:24,236 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:27 UTC)" (scheduled at 2026-08-18 10:39:24.230843+00:00)
+2026-08-18 10:39:24,281 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:27 UTC)" executed successfully
+2026-08-18 10:39:26,673 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:27,062 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/answerCallbackQuery "HTTP/1.1 200 OK"
+2026-08-18 10:39:27,231 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:30 UTC)" (scheduled at 2026-08-18 10:39:27.230843+00:00)
+2026-08-18 10:39:27,260 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:30 UTC)" executed successfully
+2026-08-18 10:39:30,232 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:33 UTC)" (scheduled at 2026-08-18 10:39:30.230843+00:00)
+2026-08-18 10:39:30,261 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:33 UTC)" executed successfully
+2026-08-18 10:39:33,231 INFO apscheduler.executors.default Running job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:36 UTC)" (scheduled at 2026-08-18 10:39:33.230843+00:00)
+2026-08-18 10:39:33,254 INFO apscheduler.executors.default Job "match_queue (trigger: interval[0:00:03], next run at: 2026-08-18 10:39:36 UTC)" executed successfully
+2026-08-18 10:39:56,158 INFO httpx HTTP Request: POST https://api.telegram.org/bot1029890851:AAFTPmesGD4R5dIHttd0e_XTRX95N2ve_gQ/getUpdates "HTTP/1.1 200 OK"
+2026-08-18 10:39:56,177 INFO telegram.ext.Application Application is stopping. This might take a moment.
+2026-08-18 10:39:56,213 INFO apscheduler.scheduler Scheduler has been shut down
+2026-08-18 10:39:56,249 INFO telegram.ext.Application Application.stop() complete
+2026-08-18 10:39:56,283 WARNING __main__ Bot stopping (post_stop)

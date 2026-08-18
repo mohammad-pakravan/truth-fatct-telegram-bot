@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def _opponent_blurb(me: User, other: User) -> str:
-    return "حریف:\n" + user_svc.format_profile(other, viewer_settings=me)
+    return T.OPPONENT_HEADER + "\n" + T.RULE + "\n" + user_svc.format_profile(other, viewer_settings=me)
 
 
 async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.MatchResult) -> None:
@@ -60,14 +60,22 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
         elif fake_game and player_a and player_b:
             body_a = (
                 T.MATCH_FOUND
-                + "\nحریف:\n"
+                + "\n"
+                + T.OPPONENT_HEADER
+                + "\n"
+                + T.RULE
+                + "\n"
                 + game_engine.presented_profile(player_b)
                 + "\n\n"
                 + T.FAKE_STAY_HINT
             )
             body_b = (
                 T.MATCH_FOUND
-                + "\nحریف:\n"
+                + "\n"
+                + T.OPPONENT_HEADER
+                + "\n"
+                + T.RULE
+                + "\n"
                 + game_engine.presented_profile(player_a)
                 + "\n\n"
                 + T.FAKE_STAY_HINT
@@ -138,7 +146,7 @@ async def deliver_match(context: ContextTypes.DEFAULT_TYPE, result: matchmaker.M
                 )
             else:
                 if is_anon:
-                    text = f"{hub_base}\n\n{turn}\n⏱️ لطفا صبر کنید بازیکن مقابل انتخاب کند"
+                    text = T.MATCH_START_WAITER.format(match_body=hub_base, turn=turn)
                 else:
                     text = T.MATCH_START_WAITER.format(match_body=body, turn=turn)
                 mid = await upsert_hub(
@@ -267,7 +275,7 @@ async def enqueue_and_maybe_match(
                     await upsert_hub(
                         context.bot,
                         tg_id,
-                        "الان در حال مچ شدنت هستیم… چند لحظه صبر کن.",
+                        T.MATCH_IN_PROGRESS,
                         message_id=hub_id,
                     )
                     return False

@@ -107,7 +107,7 @@ async def nearby_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     tg = update.effective_user
     state = st.get(tg.id)
     if state.get("mode") != "nearby":
-        await query.edit_message_text("اول از منو «افراد نزدیک» رو بزن و لوکیشن بفرست.")
+        await query.edit_message_text("اول از منو «نزدیک» رو بزن و لوکیشن بفرست.")
         return
 
     km = int(query.data.split(":")[1])
