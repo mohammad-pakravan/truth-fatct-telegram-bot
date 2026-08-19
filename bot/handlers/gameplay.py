@@ -1358,8 +1358,8 @@ async def _submit_answer(
         snap_text = (answer_text or "").strip() or None
         answerer_tg = update.effective_user.id
 
-    await _ack_answerer(context.bot, answerer_tg, skipped=False)
-    await _notify_and_advance(
+        await _ack_answerer(context.bot, answerer_tg, skipped=False)
+        await _notify_and_advance(
             context,
             session,
             game,
