@@ -554,6 +554,48 @@ async def _ask_chooser_for_prompt(
     )
 
 
+async def _push_reply_keyboard(bot, chat_id: int, reply_kb) -> None:
+    """Set reply keyboard without leaving a visible message."""
+    if reply_kb is None:
+        return
+    try:
+        tmp = await bot.send_message(chat_id, "\u2060", reply_markup=reply_kb)
+        try:
+            await bot.delete_message(chat_id, tmp.message_id)
+        except Exception:
+            pass
+    except Exception:
+        logger.debug("keyboard bump failed chat=%s", chat_id, exc_info=True)
+
+
+async def _send_bank_prompt_to_target(
+    bot,
+    target_tg: int,
+    *,
+    session_id: int,
+    prompt: str,
+) -> None:
+    """One bubble for bank question + inline skip; refresh reply keyboard."""
+    short_q = T.BANK_PROMPT_TO_TARGET.format(prompt=prompt)
+    skip_kb = kb.skip_answer(session_id)
+    state = st.get(target_tg)
+    await _delete_game_messages(
+        bot,
+        target_tg,
+        state.get("game_hub_message_id"),
+        state.get("game_glass_message_id"),
+    )
+    try:
+        sent = await bot.send_message(target_tg, short_q, reply_markup=skip_kb)
+    except Exception:
+        logger.debug("bank prompt to target failed tg=%s", target_tg, exc_info=True)
+        return
+    await _push_reply_keyboard(
+        bot, target_tg, kb.in_game_menu(awaiting_answer=True)
+    )
+    st.set_state(target_tg, game_glass_message_id=sent.message_id, game_hub_message_id=None)
+
+
 async def _deliver_prompt_to_target(
     context,
     *,
@@ -1225,27 +1267,12 @@ async def on_asker_bank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
     if not target_tg:
         return
-    short_q = T.BANK_PROMPT_TO_TARGET.format(prompt=prompt)
-    skip_kb = kb.skip_answer(session_id)
-    await upsert_hub(
+    await _send_bank_prompt_to_target(
         context.bot,
         target_tg,
-        short_q,
-        message_id=st.get(target_tg).get("game_hub_message_id"),
-        reply_kb=kb.in_game_menu(awaiting_answer=True),
-        replace_keyboard=True,
+        session_id=session_id,
+        prompt=prompt,
     )
-    glass_id = st.get(target_tg).get("game_glass_message_id")
-    await _delete_game_messages(context.bot, target_tg, glass_id)
-    try:
-        sent = await context.bot.send_message(
-            target_tg, short_q, reply_markup=skip_kb
-        )
-        glass_id = sent.message_id
-    except Exception:
-        logger.debug("bank prompt to target failed tg=%s", target_tg, exc_info=True)
-        return
-    st.set_state(target_tg, game_glass_message_id=glass_id)
 
 
 async def on_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
