@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -17,6 +18,51 @@ from bot.texts import fa as T
 logger = logging.getLogger(__name__)
 
 _MEDIA_TYPES = frozenset({"photo", "voice", "video", "video_note"})
+STALE_ASKER_SECONDS = 30 * 60
+
+
+def _waiting_for_asker_text(chooser: User | None) -> str:
+    """Label shown to answerer while waiting for opponent to send a question."""
+    from bot.services.presence import is_online
+
+    if not chooser or not chooser.last_active_at:
+        return T.WAITING_FOR_QUESTION_STALE
+    secs = int((datetime.utcnow() - chooser.last_active_at).total_seconds())
+    if secs > STALE_ASKER_SECONDS:
+        return T.WAITING_FOR_QUESTION_STALE
+    if not is_online(chooser.last_active_at):
+        return T.WAITING_FOR_QUESTION_OFFLINE
+    return T.WAITING_FOR_QUESTION
+
+
+async def _delete_game_messages(bot, chat_id: int, *message_ids: int | None) -> None:
+    for mid in message_ids:
+        if not mid:
+            continue
+        try:
+            await bot.delete_message(chat_id, mid)
+        except Exception:
+            logger.debug("delete msg failed chat=%s mid=%s", chat_id, mid, exc_info=True)
+
+
+async def _ack_answerer(bot, answerer_tg: int, *, skipped: bool = False) -> None:
+    """Remove question UI and send a fresh ack below the user's answer."""
+    state = st.get(answerer_tg)
+    await _delete_game_messages(
+        bot,
+        answerer_tg,
+        state.get("game_hub_message_id"),
+        state.get("game_glass_message_id"),
+    )
+    text = T.ANSWER_SKIPPED if skipped else T.ANSWER_RECEIVED
+    sent = await bot.send_message(
+        answerer_tg,
+        text,
+        reply_markup=kb.in_game_menu(is_chooser=False, awaiting_answer=False),
+    )
+    st.set_state(answerer_tg, game_glass_message_id=None)
+    # Keep ack as its own bubble — next round sends a fresh message below.
+    _ = sent
 
 
 def _extract_media(message) -> tuple[str | None, str | None, str | None]:
@@ -590,8 +636,19 @@ async def resume_active_game_keyboard(
         if not game:
             return False
         rnd = game_engine.get_active_round(session, game)
-        # Picker = target (answers); asker = chooser (writes Q after pick)
+        chooser = (
+            session.get(User, rnd.chooser_user_id)
+            if rnd and rnd.chooser_user_id
+            else None
+        )
         is_picker = bool(rnd and rnd.target_user_id == user.id and not rnd.choice)
+        waiting_for_prompt = bool(
+            rnd
+            and rnd.target_user_id == user.id
+            and rnd.choice
+            and not game_engine.round_has_prompt(rnd)
+            and rnd.status == "open"
+        )
         awaiting = bool(
             rnd
             and rnd.target_user_id == user.id
@@ -613,14 +670,35 @@ async def resume_active_game_keyboard(
     )
     glass_id = None
     if is_picker and picker_uid:
+        round_line = game_engine.format_round_info(
+            game.round_number, game.max_rounds
+        )
+        turn = f"{round_line}\n{T.CHOOSE_TRUTH_OR_DARE}"
         glass_id = await show_td_glass(
             context.bot,
             telegram_id,
             session_id=game_id,
             chooser_id=picker_uid,
-            turn_text=T.CHOOSE_TRUTH_OR_DARE,
+            turn_text=turn,
             glass_message_id=st.get(telegram_id).get("game_glass_message_id"),
         )
+    elif waiting_for_prompt:
+        wait_text = _waiting_for_asker_text(chooser)
+        try:
+            glass_id = st.get(telegram_id).get("game_glass_message_id")
+            if glass_id:
+                await context.bot.edit_message_text(
+                    chat_id=telegram_id,
+                    message_id=glass_id,
+                    text=wait_text,
+                    reply_markup=None,
+                )
+            else:
+                sent = await context.bot.send_message(telegram_id, wait_text)
+                glass_id = sent.message_id
+        except Exception:
+            sent = await context.bot.send_message(telegram_id, wait_text)
+            glass_id = sent.message_id
     st.set_state(
         telegram_id, game_hub_message_id=hub_id, game_glass_message_id=glass_id
     )
@@ -792,15 +870,40 @@ async def game_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return True
 
         if text == T.BTN_GAME_WAIT:
+            if (
+                rnd
+                and rnd.target_user_id == user.id
+                and rnd.choice
+                and not game_engine.round_has_prompt(rnd)
+            ):
+                asker = session.get(User, rnd.chooser_user_id)
+                wait_text = _waiting_for_asker_text(asker)
+                glass_id = st.get(tg.id).get("game_glass_message_id")
+                try:
+                    if glass_id:
+                        await context.bot.edit_message_text(
+                            chat_id=tg.id,
+                            message_id=glass_id,
+                            text=wait_text,
+                            reply_markup=None,
+                        )
+                    else:
+                        sent = await context.bot.send_message(tg.id, wait_text)
+                        st.set_state(tg.id, game_glass_message_id=sent.message_id)
+                except Exception:
+                    pass
             return True
 
         if text == T.BTN_SKIP:
             if not rnd or rnd.target_user_id != user.id or not rnd.choice or not game_engine.round_has_prompt(rnd):
                 await update.message.reply_text(T.NOT_YOUR_TURN)
                 return True
+            snap_prompt = (rnd.prompt_text or "").strip() or None
             game_engine.submit_answer(session, rnd, None)
-            await update.message.reply_text("رد شد.", reply_markup=kb.in_game_menu(is_chooser=False))
-            await _notify_and_advance(context, session, game, user, "رد شد")
+            await _ack_answerer(context.bot, tg.id, skipped=True)
+            await _notify_and_advance(
+                context, session, game, user, "رد شد", prompt_text=snap_prompt
+            )
             return True
 
         # Reply-keyboard T/D: answerer (target) picks for self
@@ -814,8 +917,9 @@ async def game_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         game_id = game.id
         asker = session.get(User, rnd.chooser_user_id)
         asker_tg = asker.telegram_id if asker else None
+        wait_text = _waiting_for_asker_text(asker)
 
-    await update.message.reply_text(T.WAITING_FOR_QUESTION)
+    await update.message.reply_text(wait_text)
     if asker_tg:
         await _ask_chooser_for_prompt(
             context,
@@ -1011,9 +1115,10 @@ async def on_truth_dare(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         asker = session.get(User, rnd.chooser_user_id)
         asker_tg = asker.telegram_id if asker else None
         game_id = game.id
+        wait_text = _waiting_for_asker_text(asker)
 
     try:
-        await query.edit_message_text(T.WAITING_FOR_QUESTION)
+        await query.edit_message_text(wait_text)
     except Exception:
         pass
     if asker_tg:
@@ -1120,28 +1225,26 @@ async def on_asker_bank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
     if not target_tg:
         return
-    # Edit «منتظر سوال…» → short question (same message).
     short_q = T.BANK_PROMPT_TO_TARGET.format(prompt=prompt)
-    glass_id = st.get(target_tg).get("game_glass_message_id")
     skip_kb = kb.skip_answer(session_id)
+    await upsert_hub(
+        context.bot,
+        target_tg,
+        short_q,
+        message_id=st.get(target_tg).get("game_hub_message_id"),
+        reply_kb=kb.in_game_menu(awaiting_answer=True),
+        replace_keyboard=True,
+    )
+    glass_id = st.get(target_tg).get("game_glass_message_id")
+    await _delete_game_messages(context.bot, target_tg, glass_id)
     try:
-        if glass_id:
-            await context.bot.edit_message_text(
-                chat_id=target_tg,
-                message_id=glass_id,
-                text=short_q,
-                reply_markup=skip_kb,
-            )
-        else:
-            sent = await context.bot.send_message(
-                target_tg, short_q, reply_markup=skip_kb
-            )
-            glass_id = sent.message_id
-    except Exception:
         sent = await context.bot.send_message(
             target_tg, short_q, reply_markup=skip_kb
         )
         glass_id = sent.message_id
+    except Exception:
+        logger.debug("bank prompt to target failed tg=%s", target_tg, exc_info=True)
+        return
     st.set_state(target_tg, game_glass_message_id=glass_id)
 
 
@@ -1253,8 +1356,10 @@ async def _submit_answer(
         snap_media = media_type
         snap_file = file_id
         snap_text = (answer_text or "").strip() or None
-        # Ack is folded into the next-round message (no extra «ثبت شد» bubble).
-        await _notify_and_advance(
+        answerer_tg = update.effective_user.id
+
+    await _ack_answerer(context.bot, answerer_tg, skipped=False)
+    await _notify_and_advance(
             context,
             session,
             game,
@@ -1284,8 +1389,15 @@ async def _finish_answer(update, context, session_id, answer, via_callback=False
             return
         snap_prompt = (rnd.prompt_text or "").strip() or None
         game_engine.submit_answer(session, rnd, answer)
+        answerer_tg = update.effective_user.id
         if via_callback:
-            await update.callback_query.edit_message_text("رد شد.")
+            try:
+                await update.callback_query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        await _ack_answerer(
+            context.bot, answerer_tg, skipped=answer is None
+        )
         await _notify_and_advance(
             context,
             session,
@@ -1316,27 +1428,14 @@ async def _notify_and_advance(
 
     nxt = game_engine.advance_round(session, game)
 
-    # Deliver answer to peer: prefer editing their «سوال ارسال شد» into Q+A.
+    # Notify asker: delete old «منتظر جواب» bubble, send fresh Q+A below.
     for p in players:
         if p.user_id == user.id:
             continue
         peer_tg = p.user.telegram_id
         prompt = prompt_text or st.get(peer_tg).get("pending_bank_prompt")
         glass_id = st.get(peer_tg).get("game_glass_message_id")
-        merged = False
-        if prompt and glass_id and not (file_id and media_type):
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=peer_tg,
-                    message_id=glass_id,
-                    text=T.BANK_QA.format(prompt=prompt, answer=body),
-                )
-                st.set_state(peer_tg, pending_bank_prompt=None)
-                merged = True
-            except Exception:
-                merged = False
-        if merged:
-            continue
+        await _delete_game_messages(context.bot, peer_tg, glass_id)
         try:
             if file_id and media_type:
                 cap = None
@@ -1345,7 +1444,7 @@ async def _notify_and_advance(
                         prompt=prompt, answer=(body or "📷")
                     )[:1024]
                 else:
-                    cap = (body or None)
+                    cap = body or None
                 await _send_media(
                     context.bot,
                     peer_tg,
@@ -1359,10 +1458,11 @@ async def _notify_and_advance(
                     if prompt
                     else T.PEER_ANSWER_HUB.format(answer=body)
                 )
-                await context.bot.send_message(peer_tg, text)
+                sent = await context.bot.send_message(peer_tg, text)
+                st.set_state(peer_tg, game_glass_message_id=sent.message_id)
             st.set_state(peer_tg, pending_bank_prompt=None)
         except Exception:
-            pass
+            logger.debug("peer answer notify failed tg=%s", peer_tg, exc_info=True)
 
     if game.chat_id and game.game_type == "group":
         try:
@@ -1426,10 +1526,14 @@ async def _notify_and_advance(
 
     if not nxt:
         return
-    await _broadcast_next_round(context, session, game, players, nxt, anonymous=anonymous)
+    await _broadcast_next_round(
+        context, session, game, players, nxt, anonymous=anonymous, answerer_id=user.id
+    )
 
 
-async def _broadcast_next_round(context, session, game, players, nxt, *, anonymous: bool) -> None:
+async def _broadcast_next_round(
+    context, session, game, players, nxt, *, anonymous: bool, answerer_id: int | None = None
+) -> None:
     chooser = session.get(User, nxt.chooser_user_id)
     target = session.get(User, nxt.target_user_id)
     if anonymous:
@@ -1463,16 +1567,15 @@ async def _broadcast_next_round(context, session, game, players, nxt, *, anonymo
                 peer_answer=None,
                 clear_hub=False,
             )
-            # Keep reply keyboard available without wiping question hub.
-            hub_id = st.get(target.telegram_id).get("game_hub_message_id")
-            if not hub_id:
-                hub_id = await upsert_hub(
-                    context.bot,
-                    target.telegram_id,
-                    round_line,
-                    reply_kb=kb.in_game_menu(is_chooser=False),
-                    replace_keyboard=True,
-                )
+            # Fresh hub line each round — do not overwrite the answer ack bubble.
+            hub_id = await upsert_hub(
+                context.bot,
+                target.telegram_id,
+                round_line,
+                message_id=None,
+                reply_kb=kb.in_game_menu(is_chooser=False),
+                replace_keyboard=True,
+            )
             st.set_state(
                 target.telegram_id,
                 game_hub_message_id=hub_id,
@@ -1482,7 +1585,7 @@ async def _broadcast_next_round(context, session, game, players, nxt, *, anonymo
             pass
         if chooser and (not target or chooser.id != target.id):
             try:
-                if chooser.id == user.id:
+                if answerer_id and chooser.id == answerer_id:
                     wait_body = T.ROUND_WAIT_PICK_ACK.format(round=round_line)
                 else:
                     wait_body = T.ROUND_WAIT_PICK.format(round=round_line)

@@ -1,4 +1,4 @@
-# Blank line — dash/pipe separators break RTL layout on Telegram mobile.
+﻿# Blank line — dash/pipe separators break RTL layout on Telegram mobile.
 RULE = ""
 
 MAIN_MENU_TITLE = (
@@ -373,7 +373,15 @@ TURN_ACTION = (
 )
 BTN_TRUTH = "🤫 حقیقت"
 BTN_DARE = "🔥 جرئت"
-WAITING_FOR_QUESTION = "⏳ حریف داره برات سوال می‌چینه…"
+WAITING_FOR_QUESTION = "⏳ منتظر سوال حریف باش…"
+WAITING_FOR_QUESTION_OFFLINE = (
+    "⏳ حریف فعلاً آفلاینه.\n"
+    "وقتی برگشت سوال می‌فرسته — همین‌جا صبر کن."
+)
+WAITING_FOR_QUESTION_STALE = (
+    "⏳ حریف هنوز سوال نفرستاده.\n"
+    "می‌تونی صبر کنی یا با «پایان بازی» خارج شی."
+)
 OPPONENT_PICKED_ASK = (
     "حریف {kind} رو انتخاب کرد ✨\n"
     f"{RULE}\n"
@@ -415,7 +423,8 @@ YOUR_PROMPT_MEDIA = (
     "جواب بده با متن، عکس، ویس یا ویدیو — یا رد کن."
 )
 PROMPT_SENT = "سوال رفت ✅\nمنتظر جواب حریف باش…"
-ANSWER_RECEIVED = "ثبت شد ✅"
+ANSWER_RECEIVED = "✅ جوابت ثبت شد"
+ANSWER_SKIPPED = "⏭ رد شد — منتظر نوبت بعدی…"
 ROUND_WAIT_PICK = (
     "{round}\n"
     "⏳ منتظر انتخاب حقیقت / جرئت حریف…"
