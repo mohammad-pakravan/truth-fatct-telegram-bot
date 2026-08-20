@@ -1,4 +1,4 @@
-from contextlib import contextmanager
+﻿from contextlib import contextmanager
 from typing import Generator
 
 from sqlalchemy import create_engine, text
@@ -31,6 +31,37 @@ def init_db() -> None:
     _migrate_user_likes_count()
     _migrate_account_privacy_columns()
     _migrate_round_prompt_source()
+    _migrate_game_idle_nudge()
+
+
+def _migrate_game_idle_nudge() -> None:
+    """last_idle_nudge_at on game_sessions."""
+    if DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info(game_sessions)").fetchall()
+            cols = {r[1] for r in rows}
+            if "last_idle_nudge_at" not in cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE game_sessions ADD COLUMN last_idle_nudge_at DATETIME"
+                )
+        return
+    if "postgresql" not in DATABASE_URL:
+        return
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'game_sessions' "
+                    "AND column_name = 'last_idle_nudge_at'"
+                )
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    text("ALTER TABLE game_sessions ADD COLUMN last_idle_nudge_at TIMESTAMP")
+                )
+    except Exception:
+        pass
 
 
 def _migrate_round_prompt_source() -> None:

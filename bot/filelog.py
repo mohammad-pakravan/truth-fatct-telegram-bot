@@ -10,7 +10,7 @@ from bot.config import DATA_DIR
 
 LOG_DIR = DATA_DIR / "logs"
 LOG_PATH = LOG_DIR / "bot.log"
-MAX_LOG_LINES = 100
+MAX_LOG_LINES = 500
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
 

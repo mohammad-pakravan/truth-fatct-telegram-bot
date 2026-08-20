@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from telegram.error import NetworkError, TimedOut
+from telegram.error import BadRequest, Forbidden, NetworkError, TimedOut
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -15,6 +15,7 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 
 from bot.config import (
+    IDLE_NUDGE_JOB_SECONDS,
     MATCH_JOB_INTERVAL_SECONDS,
     TELEGRAM_CONNECT_TIMEOUT,
     TELEGRAM_POOL_TIMEOUT,
@@ -23,6 +24,7 @@ from bot.config import (
     TELEGRAM_WRITE_TIMEOUT,
     require_token,
 )
+from bot.jobs.idle_nudge import idle_nudge_job
 from bot.jobs.matcher import match_queue_job
 from bot.db import get_session, init_db
 from bot.handlers import (
@@ -215,6 +217,27 @@ async def on_error(update, context) -> None:
     if isinstance(err, (TimedOut, NetworkError)):
         logger.warning("Telegram network issue: %s", err)
         return
+    if isinstance(err, Forbidden):
+        # User blocked the bot — common, not a crash.
+        logger.info("Forbidden (user blocked bot): %s", err)
+        return
+    if isinstance(err, BadRequest):
+        msg = str(err).lower()
+        if any(
+            s in msg
+            for s in (
+                "message is not modified",
+                "message to edit not found",
+                "message to delete not found",
+                "query is too old",
+                "message can't be edited",
+                "message_id_invalid",
+            )
+        ):
+            logger.debug("Ignorable BadRequest: %s", err)
+            return
+        logger.warning("BadRequest: %s | update=%s", err, update)
+        return
     logger.exception("Unhandled error while processing update: %s", update)
 
 
@@ -240,8 +263,17 @@ async def post_init(app: Application) -> None:
             name="match_queue",
             job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
         )
+        app.job_queue.run_repeating(
+            idle_nudge_job,
+            interval=IDLE_NUDGE_JOB_SECONDS,
+            first=20,
+            name="idle_nudge",
+            job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 30},
+        )
         logger.info(
-            "Match queue worker started (every %ss)", MATCH_JOB_INTERVAL_SECONDS
+            "Background jobs: match every %ss, idle nudge every %ss",
+            MATCH_JOB_INTERVAL_SECONDS,
+            IDLE_NUDGE_JOB_SECONDS,
         )
     else:
         logger.warning(
@@ -359,7 +391,7 @@ def build_app(token: str | None = None) -> Application:
 
 def main() -> None:
     app = build_app()
-    logger.info("Bot starting… file log: %s (last %s lines)", _log_path, 100)
+    logger.info("Bot starting… file log: %s (last %s lines)", _log_path, 500)
     try:
         app.run_polling(
             allowed_updates=[

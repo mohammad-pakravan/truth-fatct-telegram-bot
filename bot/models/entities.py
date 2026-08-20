@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
@@ -102,6 +102,8 @@ class GameSession(Base):
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Last time we nudged players about an idle/offline opponent
+    last_idle_nudge_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     players: Mapped[list["GamePlayer"]] = relationship(back_populates="session")
     rounds: Mapped[list["Round"]] = relationship(back_populates="session")

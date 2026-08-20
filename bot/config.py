@@ -38,6 +38,11 @@ CONTACT_INFO = os.getenv("CONTACT_INFO", "")
 # Match queue
 MATCH_QUEUE_TTL_MINUTES = int(os.getenv("MATCH_QUEUE_TTL_MINUTES", "45"))
 MATCH_JOB_INTERVAL_SECONDS = float(os.getenv("MATCH_JOB_INTERVAL_SECONDS", "3"))
+# Idle-opponent nudges (1v1 games)
+IDLE_NUDGE_JOB_SECONDS = float(os.getenv("IDLE_NUDGE_JOB_SECONDS", "60"))
+IDLE_OFFLINE_SECONDS = int(os.getenv("IDLE_OFFLINE_SECONDS", str(3 * 60)))
+IDLE_NUDGE_COOLDOWN_SECONDS = int(os.getenv("IDLE_NUDGE_COOLDOWN_SECONDS", str(30 * 60)))
+IDLE_NUDGE_MIN_WAIT_SECONDS = int(os.getenv("IDLE_NUDGE_MIN_WAIT_SECONDS", str(3 * 60)))
 MATCH_BATCH_SIZE = int(os.getenv("MATCH_BATCH_SIZE", "80"))
 
 # MinIO / S3-compatible storage
