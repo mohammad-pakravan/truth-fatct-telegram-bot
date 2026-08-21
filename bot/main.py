@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 
@@ -214,11 +214,8 @@ async def match_pref_callbacks(update, context):
 
 async def on_error(update, context) -> None:
     err = context.error
-    if isinstance(err, (TimedOut, NetworkError)):
-        logger.warning("Telegram network issue: %s", err)
-        return
+    # In this PTB version BadRequest subclasses NetworkError — check it first.
     if isinstance(err, Forbidden):
-        # User blocked the bot — common, not a crash.
         logger.info("Forbidden (user blocked bot): %s", err)
         return
     if isinstance(err, BadRequest):
@@ -232,11 +229,15 @@ async def on_error(update, context) -> None:
                 "query is too old",
                 "message can't be edited",
                 "message_id_invalid",
+                "chat not found",
             )
         ):
             logger.debug("Ignorable BadRequest: %s", err)
             return
         logger.warning("BadRequest: %s | update=%s", err, update)
+        return
+    if isinstance(err, (TimedOut, NetworkError)):
+        logger.warning("Telegram network issue: %s", err)
         return
     logger.exception("Unhandled error while processing update: %s", update)
 
